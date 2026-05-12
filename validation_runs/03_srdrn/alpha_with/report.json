@@ -1,0 +1,188 @@
+{
+  "n_checkpoints": 1,
+  "checkpoint_labels": [
+    "current"
+  ],
+  "feature_names": [
+    "tas",
+    "pr",
+    "huss",
+    "sfcWind",
+    "tasmax",
+    "tasmin"
+  ],
+  "n_features": 6,
+  "signatures": [
+    {
+      "impact": [
+        0.13755279678540924,
+        0.054126591654494405,
+        0.172463803862532,
+        0.08272414367335539,
+        0.23398845999812087,
+        0.13455307173232237
+      ],
+      "volatility": [
+        0.0303340908458745,
+        0.0041013200859005535,
+        0.03497492543220279,
+        0.012344965732996026,
+        0.08085606292941151,
+        0.018809217021373927
+      ],
+      "nonlinearity": [
+        0.2516045868396759,
+        0.030780557543039322,
+        0.13178157806396484,
+        0.35133227705955505,
+        0.3670898377895355,
+        0.1470956653356552
+      ],
+      "interaction": [
+        0.6872256100177765,
+        0.4321493022143841,
+        0.4617616757750511,
+        0.8066591024398804,
+        0.4589645266532898,
+        0.13808909058570862
+      ],
+      "feature_names": [
+        "tas",
+        "pr",
+        "huss",
+        "sfcWind",
+        "tasmax",
+        "tasmin"
+      ],
+      "archetypes": [
+        3,
+        7,
+        5,
+        1,
+        4,
+        7
+      ],
+      "interaction_ci": [
+        [
+          0.013149664940196315,
+          1.3613015550953567
+        ],
+        [
+          0.10322097043902101,
+          0.7610776339897471
+        ],
+        [
+          0.08105822808437563,
+          0.8424651234657266
+        ],
+        [
+          0.011634580649184434,
+          1.6016836242305763
+        ],
+        [
+          0.0,
+          0.9723966389434309
+        ],
+        [
+          0.0,
+          0.3339781118670613
+        ]
+      ],
+      "metadata": {
+        "n_features": 6,
+        "feature_shape": [
+          6
+        ],
+        "interaction_method": "cauchy_hvp",
+        "interaction_method_meta": {
+          "method": "cauchy_hvp_real",
+          "row_l1": [
+            0.9791469573974609,
+            0.4777936041355133,
+            0.5530009269714355,
+            1.1548340320587158,
+            0.7457994818687439,
+            0.28454381227493286
+          ],
+          "diag_abs": [
+            0.29192134737968445,
+            0.04564430192112923,
+            0.09123925119638443,
+            0.34817492961883545,
+            0.2868349552154541,
+            0.14645472168922424
+          ],
+          "n_probes": 20,
+          "n_samples": 4
+        }
+      }
+    }
+  ],
+  "trust": null,
+  "trust_summary": null,
+  "co_sensitivity": {
+    "groups": {
+      "0": {
+        "size": 3,
+        "medoid": 0,
+        "channels": [
+          0,
+          2,
+          5
+        ],
+        "nc_fraction": 0.0,
+        "mean_impact": 0.1482,
+        "mean_interaction": 0.429,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "1": {
+        "size": 2,
+        "medoid": 3,
+        "channels": [
+          3,
+          4
+        ],
+        "nc_fraction": 0.0,
+        "mean_impact": 0.1584,
+        "mean_interaction": 0.6328,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "2": {
+        "size": 1,
+        "medoid": 1,
+        "channels": [
+          1
+        ],
+        "nc_fraction": 0.0,
+        "mean_impact": 0.0541,
+        "mean_interaction": 0.4321,
+        "recommendation": "KEEP \u2014 mostly useful"
+      }
+    },
+    "diagnostics": {
+      "k": 3,
+      "silhouette_observed": 0.26101650277713123,
+      "silhouette_null_95": 0.28042264058017485,
+      "permutation_p": 0.13333333333333333,
+      "bootstrap_ari_median": 0.11764705882352941,
+      "best_nc_fraction": 0.0,
+      "abort_recommended": true
+    },
+    "summary": {
+      "total_features": 6,
+      "prunable": 0,
+      "n_groups": 3,
+      "k": 3,
+      "silhouette_observed": 0.26101650277713123,
+      "silhouette_null_95": 0.28042264058017485,
+      "permutation_p": 0.13333333333333333,
+      "bootstrap_ari_median": 0.11764705882352941,
+      "best_nc_fraction": 0.0,
+      "abort_recommended": true
+    }
+  },
+  "timing": {
+    "signatures_s": 458.72900795936584,
+    "cosens_s": 0.21416401863098145
+  }
+}

@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# FFCA-specific
+data/
+*.pt
+*.pth
+*.ckpt
+*.nc
+*.npz
+validation_runs/*/checkpoints/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# mypy / ruff
+.mypy_cache/
+.ruff_cache/

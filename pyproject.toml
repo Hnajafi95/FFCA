@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ffca-report"
+version = "0.1.0a1"
+description = "Feature-Function Curvature Analysis — universal XAI for any differentiable PyTorch model"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Hamed Najafi", email = "hnaja002@fiu.edu" }]
+keywords = ["xai", "explainability", "pytorch", "hessian", "interpretability", "ffca"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Intended Audience :: Science/Research",
+]
+dependencies = [
+  "torch>=1.13",
+  "numpy>=1.20",
+  "scipy>=1.7",
+  "scikit-learn>=1.0",
+  "matplotlib>=3.5",
+  "pandas>=1.3",
+]
+
+[project.optional-dependencies]
+image = ["torchvision>=0.14", "pillow>=9.0"]
+netcdf = ["xarray>=2022.0", "netCDF4>=1.6"]
+test = ["pytest>=7.0", "pytest-cov"]
+dev = ["pytest>=7.0", "ruff", "mypy"]
+
+[project.scripts]
+ffca-report = "ffca.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Hnajafi95/ffca-report"
+Issues = "https://github.com/Hnajafi95/ffca-report/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ffca"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "ffca/",
+  "examples/",
+  "docs/",
+  "tests/",
+  "README.md",
+  "LICENSE",
+]

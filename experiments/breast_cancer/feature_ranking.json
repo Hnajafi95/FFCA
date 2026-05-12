@@ -1,0 +1,242 @@
+[
+  {
+    "name": "worst texture",
+    "impact": "0.77513576",
+    "interaction": 27.895355258758332,
+    "stability": 0.509,
+    "archetype": "Volatile Spec",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "worst radius",
+    "impact": "0.71513766",
+    "interaction": 27.95357935417108,
+    "stability": 1.0,
+    "archetype": "Catalyst",
+    "decision": "CONFIDENTLY KEEP"
+  },
+  {
+    "name": "worst perimeter",
+    "impact": "0.67482364",
+    "interaction": 27.910666826126114,
+    "stability": 1.0,
+    "archetype": "Catalyst",
+    "decision": "CONFIDENTLY KEEP"
+  },
+  {
+    "name": "area error",
+    "impact": "0.66874075",
+    "interaction": 27.68542683475163,
+    "stability": 0.509,
+    "archetype": "Catalyst",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "worst area",
+    "impact": "0.6215685",
+    "interaction": 27.973094163081388,
+    "stability": 0.591,
+    "archetype": "Catalyst",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "worst smoothness",
+    "impact": "0.6019032",
+    "interaction": 27.85662029064554,
+    "stability": 0.789,
+    "archetype": "Volatile Spec",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "radius error",
+    "impact": "0.5884881",
+    "interaction": 27.809971557355578,
+    "stability": 0.591,
+    "archetype": "Stable Ctr",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "worst concavity",
+    "impact": "0.5199575",
+    "interaction": 27.96197466579528,
+    "stability": 0.509,
+    "archetype": "Catalyst",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "worst concave points",
+    "impact": "0.49816856",
+    "interaction": 27.941263213473896,
+    "stability": 0.484,
+    "archetype": "Catalyst",
+    "decision": "INVESTIGATE (unstable)"
+  },
+  {
+    "name": "fractal dimension error",
+    "impact": "0.48755804",
+    "interaction": 27.58801058704507,
+    "stability": 0.484,
+    "archetype": "Catalyst",
+    "decision": "INVESTIGATE (unstable)"
+  },
+  {
+    "name": "mean texture",
+    "impact": "0.47036895",
+    "interaction": 27.65828065530508,
+    "stability": 0.509,
+    "archetype": "Volatile Spec",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "mean concave points",
+    "impact": "0.4598344",
+    "interaction": 27.86557066422224,
+    "stability": 0.446,
+    "archetype": "Catalyst",
+    "decision": "INVESTIGATE (unstable)"
+  },
+  {
+    "name": "worst symmetry",
+    "impact": "0.43463874",
+    "interaction": 27.93184039604188,
+    "stability": 0.509,
+    "archetype": "Stable Ctr",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "perimeter error",
+    "impact": "0.40054178",
+    "interaction": 27.980666885772525,
+    "stability": 0.693,
+    "archetype": "Complex Drv",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "compactness error",
+    "impact": "0.39393067",
+    "interaction": 26.13375531556768,
+    "stability": 0.693,
+    "archetype": "Complex Drv",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "mean concavity",
+    "impact": "0.37482807",
+    "interaction": 27.876164916113684,
+    "stability": 0.693,
+    "archetype": "Complex Drv",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "mean fractal dimension",
+    "impact": "0.37458903",
+    "interaction": 27.57043202244779,
+    "stability": 0.591,
+    "archetype": "Stable Ctr",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "mean area",
+    "impact": "0.36418888",
+    "interaction": 26.805391986052385,
+    "stability": 0.344,
+    "archetype": "Catalyst",
+    "decision": "INVESTIGATE (unstable)"
+  },
+  {
+    "name": "mean compactness",
+    "impact": "0.3581451",
+    "interaction": 25.370759043512734,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "mean radius",
+    "impact": "0.31826863",
+    "interaction": 23.961687600085657,
+    "stability": 0.509,
+    "archetype": "Catalyst",
+    "decision": "MONITOR (borderline)"
+  },
+  {
+    "name": "texture error",
+    "impact": "0.29940745",
+    "interaction": 27.142509114215517,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "worst fractal dimension",
+    "impact": "0.23168807",
+    "interaction": 27.195647893545036,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "concavity error",
+    "impact": "0.22488548",
+    "interaction": 27.402007480532205,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "mean symmetry",
+    "impact": "0.21994416",
+    "interaction": 27.77284160941734,
+    "stability": 0.789,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "mean smoothness",
+    "impact": "0.21546815",
+    "interaction": 27.91638503427375,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "symmetry error",
+    "impact": "0.2015374",
+    "interaction": 25.905569273600776,
+    "stability": 0.789,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "worst compactness",
+    "impact": "0.19779138",
+    "interaction": 24.568247372257012,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "mean perimeter",
+    "impact": "0.19769302",
+    "interaction": 22.163577639086096,
+    "stability": 0.789,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "concave points error",
+    "impact": "0.14959885",
+    "interaction": 26.813342989465337,
+    "stability": 1.0,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  },
+  {
+    "name": "smoothness error",
+    "impact": "0.14705381",
+    "interaction": 26.64794651284391,
+    "stability": 0.789,
+    "archetype": "Complex Drv",
+    "decision": "KEEP (stable)"
+  }
+]

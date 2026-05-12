@@ -1,0 +1,40 @@
+{
+  "with_improvements": {
+    "elapsed_s": 0.8310470581054688,
+    "interaction_method": "cauchy_hvp",
+    "trust_summary": {
+      "INVESTIGATE (unstable)": 17,
+      "MONITOR (borderline)": 7,
+      "CONFIDENTLY KEEP": 4,
+      "KEEP (stable)": 2
+    },
+    "cosens_diagnostics": {
+      "k": 2,
+      "silhouette_observed": 0.8086099879660531,
+      "silhouette_null_95": 0.02406307839040363,
+      "permutation_p": 0.0,
+      "bootstrap_ari_median": 1.0,
+      "best_nc_fraction": 0.138,
+      "abort_recommended": true
+    },
+    "top5_impact": [
+      "worst smoothness",
+      "worst perimeter",
+      "worst texture",
+      "worst area",
+      "area error"
+    ]
+  },
+  "baseline": {
+    "elapsed_s": 0.4163811206817627,
+    "interaction_method": "correlation_proxy",
+    "top5_impact": [
+      "worst smoothness",
+      "worst perimeter",
+      "worst texture",
+      "worst area",
+      "area error"
+    ]
+  },
+  "top5_overlap": 5
+}

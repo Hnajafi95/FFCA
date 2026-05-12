@@ -1,0 +1,42 @@
+include README.md
+include LICENSE
+include pyproject.toml
+
+# Source
+recursive-include ffca *.py
+
+# Examples and docs
+recursive-include examples *.py
+recursive-include docs *.md
+
+# Tests
+recursive-include tests *.py
+
+# Validation artifacts (reports + plots only — no checkpoints / data)
+recursive-include validation_runs *.md
+recursive-include validation_runs *.json
+recursive-include validation_runs *.py
+recursive-include validation_runs/01_tabular/baseline/plots *.png
+recursive-include validation_runs/01_tabular/with_improvements/plots *.png
+recursive-include validation_runs/02_cnn/channel_baseline/plots *.png
+recursive-include validation_runs/02_cnn/channel_with/plots *.png
+recursive-include validation_runs/02_cnn/pixel_baseline/plots *.png
+recursive-include validation_runs/02_cnn/pixel_with/plots *.png
+recursive-include validation_runs/03_srdrn/alpha_baseline/plots *.png
+recursive-include validation_runs/03_srdrn/alpha_with/plots *.png
+recursive-include validation_runs/03_srdrn/input_baseline/plots *.png
+recursive-include validation_runs/03_srdrn/input_with/plots *.png
+recursive-include validation_runs/04_llm/emb_baseline/plots *.png
+recursive-include validation_runs/04_llm/emb_with/plots *.png
+recursive-include validation_runs/04_llm/head_baseline/plots *.png
+recursive-include validation_runs/04_llm/head_with/plots *.png
+
+# Hard exclusions
+recursive-exclude validation_runs *.pt
+recursive-exclude validation_runs *.pth
+recursive-exclude validation_runs *.ckpt
+recursive-exclude validation_runs/*/checkpoints *
+prune data
+prune **/__pycache__
+prune **/.pytest_cache
+prune **/*.egg-info

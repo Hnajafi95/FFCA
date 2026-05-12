@@ -1,0 +1,139 @@
+{
+  "history": [
+    {
+      "epoch": 1,
+      "acc": 0.6388657214345288,
+      "group_acc": {
+        "0": 0.9635974304068522,
+        "1": 0.48283261802575106,
+        "2": 0.06766917293233082,
+        "3": 0.6165413533834586
+      }
+    },
+    {
+      "epoch": 2,
+      "acc": 0.6905754795663053,
+      "group_acc": {
+        "0": 0.9892933618843683,
+        "1": 0.630901287553648,
+        "2": 0.03759398496240601,
+        "3": 0.5037593984962406
+      }
+    },
+    {
+      "epoch": 3,
+      "acc": 0.5946622185154296,
+      "group_acc": {
+        "0": 0.9464668094218416,
+        "1": 0.3111587982832618,
+        "2": 0.12781954887218044,
+        "3": 0.8195488721804511
+      }
+    },
+    {
+      "epoch": 4,
+      "acc": 0.6330275229357798,
+      "group_acc": {
+        "0": 0.974304068522484,
+        "1": 0.4313304721030043,
+        "2": 0.06015037593984962,
+        "3": 0.7142857142857143
+      }
+    },
+    {
+      "epoch": 5,
+      "acc": 0.6572143452877398,
+      "group_acc": {
+        "0": 0.9764453961456103,
+        "1": 0.4957081545064378,
+        "2": 0.06015037593984962,
+        "3": 0.6992481203007519
+      }
+    }
+  ],
+  "cauchy_hvp": {
+    "method": "cauchy_hvp_real",
+    "n_probes": 80,
+    "n_samples": 8,
+    "d_pixels": 12288,
+    "real_hvp_time_seconds": 3.614920139312744,
+    "mean_row_l1": 0.015724136042032082,
+    "mean_diag_abs": 0.0008724545722461566,
+    "fbr": 0.6300358244168289
+  },
+  "trust_summary": {
+    "KEEP (stable)": 6581,
+    "MONITOR (borderline)": 2463,
+    "INVESTIGATE (unstable)": 2863,
+    "CONFIDENTLY KEEP": 381
+  },
+  "co_sensitivity": {
+    "diagnostics": {
+      "k": 7,
+      "silhouette_observed": 0.23971411398345818,
+      "silhouette_null_95": 0.06907993077487073,
+      "permutation_p": 0.0,
+      "bootstrap_ari_median": 0.21326512164770958,
+      "best_nc_fraction": 0.26,
+      "abort_recommended": true
+    },
+    "groups": {
+      "0": {
+        "size": 96,
+        "medoid": 595,
+        "nc_fraction": 0.26,
+        "mean_impact": 0.0014,
+        "mean_interaction": 0.0193,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "1": {
+        "size": 998,
+        "medoid": 1842,
+        "nc_fraction": 0.081,
+        "mean_impact": 0.002,
+        "mean_interaction": 0.0268,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "2": {
+        "size": 168,
+        "medoid": 1228,
+        "nc_fraction": 0.042,
+        "mean_impact": 0.0021,
+        "mean_interaction": 0.0353,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "3": {
+        "size": 235,
+        "medoid": 1959,
+        "nc_fraction": 0.115,
+        "mean_impact": 0.002,
+        "mean_interaction": 0.0284,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "4": {
+        "size": 249,
+        "medoid": 3,
+        "nc_fraction": 0.092,
+        "mean_impact": 0.0013,
+        "mean_interaction": 0.028,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "5": {
+        "size": 83,
+        "medoid": 1802,
+        "nc_fraction": 0.024,
+        "mean_impact": 0.0019,
+        "mean_interaction": 0.033,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "6": {
+        "size": 219,
+        "medoid": 1544,
+        "nc_fraction": 0.242,
+        "mean_impact": 0.0018,
+        "mean_interaction": 0.0257,
+        "recommendation": "KEEP \u2014 mostly useful"
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "device": "mps",
+  "epochs": 8,
+  "checkpoints": [
+    "ep1",
+    "ep3",
+    "ep6",
+    "ep8"
+  ],
+  "pixel": {
+    "with": {
+      "elapsed_s": 4.42933988571167,
+      "interaction_method": "cauchy_hvp",
+      "archetypes": [
+        369,
+        86,
+        0,
+        681,
+        497,
+        258,
+        365,
+        816
+      ],
+      "trust": {
+        "CONFIDENTLY PRUNE": 194,
+        "INVESTIGATE (unstable)": 1611,
+        "MONITOR (borderline)": 681,
+        "KEEP (stable)": 278,
+        "CONFIDENTLY KEEP": 308
+      },
+      "fbr": 0.6224926805578449
+    },
+    "baseline": {
+      "elapsed_s": 1.0861120223999023,
+      "interaction_method": "correlation_proxy",
+      "archetypes": [
+        112,
+        353,
+        0,
+        415,
+        694,
+        336,
+        350,
+        812
+      ],
+      "fbr": 0.5016769814105674
+    }
+  },
+  "channel": {
+    "with": {
+      "elapsed_s": 0.6141510009765625,
+      "interaction_method": "cauchy_hvp",
+      "archetypes": [
+        19,
+        6,
+        0,
+        25,
+        15,
+        9,
+        21,
+        33
+      ],
+      "trust": {
+        "KEEP (stable)": 7,
+        "INVESTIGATE (unstable)": 66,
+        "CONFIDENTLY PRUNE": 12,
+        "MONITOR (borderline)": 29,
+        "CONFIDENTLY KEEP": 14
+      },
+      "cosens_abort": true
+    },
+    "baseline": {
+      "elapsed_s": 0.19389915466308594,
+      "interaction_method": "correlation_proxy",
+      "archetypes": [
+        8,
+        7,
+        1,
+        25,
+        21,
+        8,
+        18,
+        40
+      ]
+    }
+  }
+}

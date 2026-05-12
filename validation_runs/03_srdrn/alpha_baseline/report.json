@@ -1,0 +1,84 @@
+{
+  "n_checkpoints": 1,
+  "checkpoint_labels": [
+    "current"
+  ],
+  "feature_names": [
+    "tas",
+    "pr",
+    "huss",
+    "sfcWind",
+    "tasmax",
+    "tasmin"
+  ],
+  "n_features": 6,
+  "signatures": [
+    {
+      "impact": [
+        0.13755279678540924,
+        0.054126591654494405,
+        0.172463803862532,
+        0.08272414367335539,
+        0.23398845999812087,
+        0.13455307173232237
+      ],
+      "volatility": [
+        0.0303340908458745,
+        0.0041013200859005535,
+        0.03497492543220279,
+        0.012344965732996026,
+        0.08085606292941151,
+        0.018809217021373927
+      ],
+      "nonlinearity": [
+        0.2516045868396759,
+        0.030780557543039322,
+        0.13178157806396484,
+        0.35133227705955505,
+        0.3670898377895355,
+        0.1470956653356552
+      ],
+      "interaction": [
+        2.118835755738808,
+        1.1242543180709532,
+        1.203425754730262,
+        1.641638972993256,
+        1.3614668240950052,
+        1.6057932227689016
+      ],
+      "feature_names": [
+        "tas",
+        "pr",
+        "huss",
+        "sfcWind",
+        "tasmax",
+        "tasmin"
+      ],
+      "archetypes": [
+        3,
+        0,
+        5,
+        1,
+        4,
+        7
+      ],
+      "interaction_ci": null,
+      "metadata": {
+        "n_features": 6,
+        "feature_shape": [
+          6
+        ],
+        "interaction_method": "correlation_proxy",
+        "interaction_method_meta": {
+          "n_gradient_samples": 12
+        }
+      }
+    }
+  ],
+  "trust": null,
+  "trust_summary": null,
+  "co_sensitivity": null,
+  "timing": {
+    "signatures_s": 129.25727200508118
+  }
+}

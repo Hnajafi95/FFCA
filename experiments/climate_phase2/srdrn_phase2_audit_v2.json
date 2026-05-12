@@ -1,0 +1,126 @@
+{
+  "phase_2_2": {
+    "conv2d": {
+      "d": 64,
+      "cauchy_significant": 64,
+      "cosens_groups": 2,
+      "cosens_prunable": 0,
+      "cosens_diagnostics": {
+        "k": 2,
+        "silhouette_observed": 0.32372344714501355,
+        "silhouette_null_95": 0.011429726679735304,
+        "permutation_p": 0.0,
+        "bootstrap_ari_median": 0.3518855656697009,
+        "best_nc_fraction": 0.357,
+        "abort_recommended": true
+      }
+    },
+    "conv2d_33": {
+      "d": 64,
+      "cauchy_significant": 64,
+      "cosens_groups": 4,
+      "cosens_prunable": 0,
+      "cosens_diagnostics": {
+        "k": 4,
+        "silhouette_observed": 0.41917437609142116,
+        "silhouette_null_95": 0.006313491536818986,
+        "permutation_p": 0.0,
+        "bootstrap_ari_median": 0.7269690831456858,
+        "best_nc_fraction": 0.167,
+        "abort_recommended": true
+      }
+    },
+    "conv2d_34": {
+      "d": 512,
+      "cauchy_significant": 512,
+      "cosens_groups": 2,
+      "cosens_prunable": 0,
+      "cosens_diagnostics": {
+        "k": 2,
+        "silhouette_observed": 0.19710840986923525,
+        "silhouette_null_95": 0.0022805189879956185,
+        "permutation_p": 0.0,
+        "bootstrap_ari_median": 0.3824382139182243,
+        "best_nc_fraction": 0.082,
+        "abort_recommended": true
+      }
+    },
+    "conv2d_35": {
+      "d": 512,
+      "cauchy_significant": 512,
+      "cosens_groups": 2,
+      "cosens_prunable": 0,
+      "cosens_diagnostics": {
+        "k": 2,
+        "silhouette_observed": 0.2168326054946016,
+        "silhouette_null_95": 0.002145768004086005,
+        "permutation_p": 0.0,
+        "bootstrap_ari_median": 0.17771205833280249,
+        "best_nc_fraction": 0.116,
+        "abort_recommended": true
+      }
+    }
+  },
+  "phase_2_4": {
+    "tas": {
+      "stability": 0.195,
+      "importance": 0.377207,
+      "weighted_entropy": 0.6654,
+      "plain_entropy": 1.2799,
+      "dominant_archetype": "Catalyst",
+      "dominant_fraction": 0.4,
+      "n_unique_archetypes": 4,
+      "decision": "INVESTIGATE (unstable)"
+    },
+    "pr": {
+      "stability": 0.674,
+      "importance": 0.134844,
+      "weighted_entropy": 0.2696,
+      "plain_entropy": 0.3251,
+      "dominant_archetype": "Noise",
+      "dominant_fraction": 0.9,
+      "n_unique_archetypes": 2,
+      "decision": "MONITOR (borderline)"
+    },
+    "huss": {
+      "stability": 0.228,
+      "importance": 0.302895,
+      "weighted_entropy": 0.638,
+      "plain_entropy": 1.3322,
+      "dominant_archetype": "Catalyst",
+      "dominant_fraction": 0.4,
+      "n_unique_archetypes": 4,
+      "decision": "INVESTIGATE (unstable)"
+    },
+    "sfcWind": {
+      "stability": 0.717,
+      "importance": 0.201792,
+      "weighted_entropy": 0.2339,
+      "plain_entropy": 0.639,
+      "dominant_archetype": "Complex Driver",
+      "dominant_fraction": 0.8,
+      "n_unique_archetypes": 3,
+      "decision": "KEEP (stable)"
+    },
+    "tasmax": {
+      "stability": 0.785,
+      "importance": 0.327046,
+      "weighted_entropy": 0.1775,
+      "plain_entropy": 0.3251,
+      "dominant_archetype": "Catalyst",
+      "dominant_fraction": 0.9,
+      "n_unique_archetypes": 2,
+      "decision": "CONFIDENTLY KEEP"
+    },
+    "tasmin": {
+      "stability": 0.532,
+      "importance": 0.258819,
+      "weighted_entropy": 0.3873,
+      "plain_entropy": 0.5004,
+      "dominant_archetype": "Complex Driver",
+      "dominant_fraction": 0.8,
+      "n_unique_archetypes": 2,
+      "decision": "MONITOR (borderline)"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "model_id": "distilgpt2",
+  "n_params": 81912576,
+  "seq_len": 16,
+  "hidden": 768,
+  "embedding": {
+    "emb_with": {
+      "elapsed_s": 158.62987804412842,
+      "interaction_method": "cauchy_hvp",
+      "archetypes": [
+        1224,
+        470,
+        2,
+        2602,
+        1738,
+        1207,
+        1587,
+        3458
+      ]
+    },
+    "emb_baseline": {
+      "elapsed_s": 5.229621887207031,
+      "interaction_method": "correlation_proxy",
+      "archetypes": [
+        324,
+        3244,
+        21,
+        603,
+        2979,
+        1096,
+        1900,
+        2121
+      ]
+    }
+  },
+  "head": {
+    "head_with": {
+      "elapsed_s": 1.414376974105835,
+      "interaction_method": "cauchy_hvp",
+      "archetypes": [
+        28,
+        73,
+        14,
+        118,
+        130,
+        115,
+        95,
+        195
+      ]
+    },
+    "head_baseline": {
+      "elapsed_s": 0.6778080463409424,
+      "interaction_method": "correlation_proxy",
+      "archetypes": [
+        24,
+        82,
+        33,
+        110,
+        157,
+        49,
+        114,
+        199
+      ]
+    }
+  }
+}

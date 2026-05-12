@@ -1,0 +1,136 @@
+{
+  "dataset": "breast_cancer_wisconsin",
+  "n_features": 30,
+  "n_samples": 569,
+  "feature_names": [
+    "mean radius",
+    "mean texture",
+    "mean perimeter",
+    "mean area",
+    "mean smoothness",
+    "mean compactness",
+    "mean concavity",
+    "mean concave points",
+    "mean symmetry",
+    "mean fractal dimension",
+    "radius error",
+    "texture error",
+    "perimeter error",
+    "area error",
+    "smoothness error",
+    "compactness error",
+    "concavity error",
+    "concave points error",
+    "symmetry error",
+    "fractal dimension error",
+    "worst radius",
+    "worst texture",
+    "worst perimeter",
+    "worst area",
+    "worst smoothness",
+    "worst compactness",
+    "worst concavity",
+    "worst concave points",
+    "worst symmetry",
+    "worst fractal dimension"
+  ],
+  "baseline": {
+    "final_val_acc": 0.956140350877193,
+    "time_seconds": 0.7294631004333496
+  },
+  "full_pipeline": {
+    "final_val_acc": 0.956140350877193,
+    "time_seconds": 0.21634507179260254,
+    "trust_summary": {
+      "MONITOR (borderline)": 8,
+      "INVESTIGATE (unstable)": 10,
+      "KEEP (stable)": 5,
+      "CONFIDENTLY KEEP": 6,
+      "CONFIDENTLY PRUNE": 1
+    },
+    "co_sens_summary": {
+      "total_features": 30,
+      "prunable": 2,
+      "n_groups": 3,
+      "k": 3,
+      "silhouette_observed": 0.8054885063944935,
+      "silhouette_null_95": 0.08323954227830328,
+      "permutation_p": 0.0,
+      "bootstrap_ari_median": 0.7877510136785613,
+      "best_nc_fraction": 1.0,
+      "abort_recommended": false
+    }
+  },
+  "improvement_1_cauchy_hvp": {
+    "n_significant_interactions": "30",
+    "speedup_vs_full_hessian": 0.297029702970297,
+    "top_interactions": [
+      [
+        "compactness error",
+        0.8816463239490986
+      ],
+      [
+        "worst smoothness",
+        0.8022984191775322
+      ],
+      [
+        "symmetry error",
+        0.709842536598444
+      ],
+      [
+        "worst texture",
+        0.7056500297039747
+      ],
+      [
+        "worst radius",
+        0.6766343489289284
+      ]
+    ]
+  },
+  "improvement_5_trust_score": {
+    "prunable_count": 1,
+    "investigate_count": 11,
+    "prunable_features": [
+      "mean symmetry"
+    ]
+  },
+  "improvement_6_co_sensitivity": {
+    "n_groups": 2,
+    "prunable_groups": 0,
+    "group_summary": {
+      "0": {
+        "size": 27,
+        "medoid": 3,
+        "channels": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "nc_fraction": 0.148,
+        "mean_impact": 0.4594,
+        "mean_interaction": 0.5317,
+        "recommendation": "KEEP \u2014 mostly useful"
+      },
+      "1": {
+        "size": 3,
+        "medoid": 14,
+        "channels": [
+          11,
+          14,
+          16
+        ],
+        "nc_fraction": 0.0,
+        "mean_impact": 0.1416,
+        "mean_interaction": 0.5346,
+        "recommendation": "KEEP \u2014 mostly useful"
+      }
+    }
+  }
+}
