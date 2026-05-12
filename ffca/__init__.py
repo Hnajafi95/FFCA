@@ -23,7 +23,7 @@ from .core import FFCAModelAdapter, FFCASignature
 from .improvements_pkg import CauchyHVP, CoSensitivityGroups, TrustScore
 from .report import FFCAReport
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 
 __all__ = [
     "FFCAReport",

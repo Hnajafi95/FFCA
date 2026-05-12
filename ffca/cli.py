@@ -221,6 +221,153 @@ def _enumerate_layers(model: nn.Module) -> list[tuple[int, str, str]]:
 
 
 # --------------------------------------------------------------------------- #
+# File-based model loading (for the wizard's "give me a .py path" mode)
+# --------------------------------------------------------------------------- #
+_TF_MARKERS = (
+    "import tensorflow", "from tensorflow",
+    "import keras", "from keras",
+    "tf.keras", "tensorflow.keras",
+)
+
+
+def _detect_tf_in_file(py_path: Path) -> bool:
+    """Heuristic: does this .py file import TensorFlow / Keras?"""
+    try:
+        text = py_path.read_text(errors="ignore")
+    except OSError:
+        return False
+    return any(m in text for m in _TF_MARKERS)
+
+
+def _load_classes_from_file(py_path: Path) -> tuple[str, list[tuple[str, type]]]:
+    """Import a .py file as a fresh module and return (module_name, [(class_name, cls), ...])
+    for every nn.Module subclass DEFINED in that file (not imported into it).
+    """
+    import importlib.util
+    mod_name = f"_ffca_user_{abs(hash(str(py_path.resolve())))}"
+    spec = importlib.util.spec_from_file_location(mod_name, py_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load spec for {py_path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = mod
+    # Also make the parent directory importable so sibling files (e.g.
+    # `from network import Generator` in train.py) resolve.
+    parent = str(py_path.resolve().parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as e:
+        # Cleanup the bad import to allow re-prompt
+        sys.modules.pop(mod_name, None)
+        raise ImportError(f"importing {py_path.name} failed: {e}") from e
+
+    rows: list[tuple[str, type]] = []
+    for name in dir(mod):
+        obj = getattr(mod, name)
+        if (
+            isinstance(obj, type)
+            and issubclass(obj, nn.Module)
+            and obj is not nn.Module
+            and getattr(obj, "__module__", "") == mod_name
+        ):
+            rows.append((name, obj))
+    return mod_name, rows
+
+
+def _resolve_model_spec_interactive() -> str:
+    """Prompt the user until they give us a valid model spec.
+    Returns an import spec ('mod:Class') that _import_model_class() can resolve."""
+    print("Step 1 — Where is your model defined?")
+    print()
+    print("  You can give me either:")
+    print("    (A) Path to the .py file with your PyTorch model class")
+    print("        e.g.  /Users/me/code/network.py")
+    print("    (B) An import path: package.module:ClassName")
+    print("        e.g.  torchvision.models:resnet50")
+    print()
+
+    while True:
+        raw = _ask("  Model file or import path").strip()
+
+        # ----- (B) import-path mode: contains ':' and no path separators -----
+        looks_like_import_spec = (
+            ":" in raw and not raw.endswith(".py")
+            and "/" not in raw and "\\" not in raw
+        )
+        if looks_like_import_spec:
+            try:
+                cls = _import_model_class(raw)
+            except Exception as e:
+                print(f"  ✗ Could not import {raw!r}: {e}")
+                print("    Try a file path like /path/to/model.py instead.")
+                continue
+            if not (isinstance(cls, type) and issubclass(cls, nn.Module)):
+                print(f"  ✗ {raw} is not an nn.Module subclass.")
+                continue
+            print(f"  ✓ Selected: {cls.__name__}")
+            return raw
+
+        # ----- (A) file-path mode --------------------------------------------
+        path = Path(raw).expanduser()
+        if not path.exists():
+            print(f"  ✗ Path {path} does not exist.")
+            print("    Re-enter, or pass an import path like 'pkg.module:Class'.")
+            continue
+        if path.is_dir():
+            print(f"  ✗ {path} is a directory — point me at a .py file inside it.")
+            continue
+        if path.suffix.lower() != ".py":
+            print(f"  ✗ {path} is not a .py file.")
+            print("    The wizard needs the Python source file that defines your model class.")
+            continue
+        if _detect_tf_in_file(path):
+            print(f"  ✗ {path.name} appears to be a TensorFlow / Keras model.")
+            print("    FFCA only supports PyTorch — derivatives are taken through")
+            print("    torch.autograd. You'll need a torch.nn version of this model.")
+            print("    (For SRDRN specifically, see validation_runs/03_srdrn/srdrn_pytorch.py")
+            print("    in the FFCA repo for a working PyTorch port.)")
+            continue
+
+        print(f"  Scanning {path.name} for PyTorch model classes ...")
+        try:
+            mod_name, rows = _load_classes_from_file(path)
+        except ImportError as e:
+            print(f"  ✗ {e}")
+            print("    Common causes: missing dependency, syntax error, or the file")
+            print("    needs sibling files / a working directory it can't find.")
+            continue
+
+        if not rows:
+            print(f"  ✗ No nn.Module subclasses defined in {path.name}.")
+            print("    (Classes imported FROM other files don't count — the class")
+            print("    must be defined in this file.)")
+            continue
+
+        print(f"  Found {len(rows)} PyTorch nn.Module class(es) in {path.name}:")
+        for i, (name, _) in enumerate(rows):
+            print(f"    [{i}] {name}")
+        if len(rows) == 1:
+            chosen = 0
+            print(f"  → Auto-selected the only class: {rows[0][0]}")
+        else:
+            sel = _ask("  Pick class index", default="0")
+            try:
+                chosen = int(sel)
+            except ValueError:
+                print(f"  ✗ Not a number.")
+                continue
+            if not (0 <= chosen < len(rows)):
+                print(f"  ✗ Index {chosen} out of range (have 0..{len(rows)-1}).")
+                continue
+        cls_name = rows[chosen][0]
+        print(f"  ✓ Selected: {cls_name}")
+        # We can re-resolve later via importlib.import_module since the module is
+        # registered in sys.modules.
+        return f"{mod_name}:{cls_name}"
+
+
+# --------------------------------------------------------------------------- #
 # Interactive wizard
 # --------------------------------------------------------------------------- #
 def _ask(prompt: str, default: Optional[str] = None,
@@ -257,33 +404,55 @@ def _wizard() -> dict:
     print()
 
     # ---- Step 1: model class --------------------------------------------- #
-    print("Step 1 — Where is your model defined?")
-    print("  Provide it as 'package.module:ClassName'")
-    print("  Example: 'mypkg.models:MyCNN'")
-    print("  (The package must be importable in this Python environment.)")
-    model_class = _ask("  Model class")
+    model_class = _resolve_model_spec_interactive()
+    cls = _import_model_class(model_class)
 
-    # ---- Step 2: weights ------------------------------------------------- #
+    # Instantiate (no weights yet) just to introspect the architecture.
+    try:
+        model = cls() if isinstance(cls, type) else cls()
+    except Exception as e:
+        sys.exit(
+            f"  ✗ Could not instantiate {cls.__name__}: {e}\n"
+            f"    The constructor needs arguments. Use the flag form:\n"
+            f"      ffca-report --model-class ... --model-kwargs '{{\"arg\": value}}'"
+        )
+
+    # ---- Step 2: weights (with re-prompt on failure) --------------------- #
     print()
     print("Step 2 — Path to the trained weights (.pt or .pth)")
-    weights = _ask("  Weights path")
-
-    # ---- load it for inspection ------------------------------------------ #
-    print()
-    print("Loading model ...")
-    try:
-        cls = _import_model_class(model_class)
-        model = cls() if isinstance(cls, type) else cls()
-        state = torch.load(weights, map_location="cpu", weights_only=False)
+    weights = ""
+    while True:
+        weights = _ask("  Weights path")
+        wpath = Path(weights).expanduser()
+        if not wpath.exists():
+            print(f"  ✗ {wpath} does not exist. Try again or press Ctrl-C to quit.")
+            continue
+        try:
+            state = torch.load(wpath, map_location="cpu", weights_only=False)
+        except Exception as e:
+            print(f"  ✗ torch.load failed: {e}")
+            print("    Make sure this is a PyTorch checkpoint (.pt / .pth).")
+            print("    Keras/TensorFlow (.h5, SavedModel) won't work.")
+            continue
         if isinstance(state, dict) and "state_dict" in state:
             state = state["state_dict"]
-        model.load_state_dict(state, strict=False)
+        try:
+            missing, unexpected = model.load_state_dict(state, strict=False)
+        except Exception as e:
+            print(f"  ✗ Could not load state_dict into {cls.__name__}: {e}")
+            print("    The weights don't match the model architecture you picked.")
+            print("    Check that you selected the right class in Step 1.")
+            continue
         model.eval()
         n_params = sum(p.numel() for p in model.parameters())
-        print(f"  ✓ Loaded {type(model).__name__} "
-              f"({n_params:,} parameters)")
-    except Exception as e:
-        sys.exit(f"  ✗ Could not load model: {e}")
+        print(f"  ✓ Loaded {type(model).__name__} ({n_params:,} parameters)")
+        if missing:
+            print(f"    note: {len(missing)} parameter(s) in the model had no matching weight")
+        if unexpected:
+            print(f"    note: {len(unexpected)} weight key(s) in the file were not used")
+        # Store the resolved absolute path so the model_factory in main() can re-load.
+        weights = str(wpath)
+        break
 
     # ---- Step 3: model type --------------------------------------------- #
     print()
