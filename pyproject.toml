@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ffca-report"
+name = "ffca"
 version = "0.1.0a1"
 description = "Feature-Function Curvature Analysis — universal XAI for any differentiable PyTorch model"
 readme = "README.md"
@@ -41,8 +41,8 @@ dev = ["pytest>=7.0", "ruff", "mypy"]
 ffca-report = "ffca.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Hnajafi95/ffca-report"
-Issues = "https://github.com/Hnajafi95/ffca-report/issues"
+Homepage = "https://github.com/Hnajafi95/FFCA"
+Issues = "https://github.com/Hnajafi95/FFCA/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ffca"]

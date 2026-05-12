@@ -1,6 +1,6 @@
-# ffca-report
+# FFCA
 
-[![PyPI - Version](https://img.shields.io/pypi/v/ffca-report.svg)](https://pypi.org/project/ffca-report/)
+[![PyPI - Version](https://img.shields.io/pypi/v/ffca.svg)](https://pypi.org/project/ffca/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
@@ -20,10 +20,14 @@ a list of training checkpoints).
 ## Install
 
 ```bash
-pip install ffca-report                     # core: tabular FFCA
-pip install "ffca-report[image]"            # +torchvision for pixel/channel FFCA
-pip install "ffca-report[netcdf]"           # +xarray for scientific NetCDF data
+pip install ffca                            # core: tabular FFCA
+pip install "ffca[image]"                   # +torchvision for pixel/channel FFCA
+pip install "ffca[netcdf]"                  # +xarray for scientific NetCDF data
 ```
+
+> Note: the PyPI distribution is named **`ffca`**, the import name is also
+> `ffca`, and the CLI binary remains **`ffca-report`** (kept for backward
+> compatibility with scripts).
 
 ## 30-second quickstart
 
