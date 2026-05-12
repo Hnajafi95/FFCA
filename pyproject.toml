@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ffca"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Feature-Function Curvature Analysis — universal XAI for any differentiable PyTorch model"
 readme = "README.md"
 requires-python = ">=3.9"
