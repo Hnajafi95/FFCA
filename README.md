@@ -3,16 +3,24 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/ffca.svg)](https://pypi.org/project/ffca/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/framework-PyTorch%20only-orange.svg)](#framework-support-and-limitations)
 
-**Feature-Function Curvature Analysis (FFCA)** — universal explainability for
-any differentiable PyTorch model. From a trained model + a DataLoader, FFCA
-produces a 4-D *signature* per feature (Impact, Volatility, Non-linearity,
-Interaction), classifies each feature into one of 8 archetypes, and emits a
-report that flags overfitting, data leakage, shortcut learning, unstable
-feature roles, and prune-safe / load-bearing features.
+> ⚠️ **PyTorch only.** FFCA computes derivatives through `torch.autograd`. It
+> does **not** work with TensorFlow / Keras (`.h5`, SavedModel) or JAX models.
+> If your model is in TensorFlow, see
+> [Framework support and limitations](#framework-support-and-limitations) below.
+
+**Feature-Function Curvature Analysis (FFCA)** — explainability across
+*architectures* (MLPs, CNNs, Transformers, …) for any differentiable PyTorch
+model. From a trained model + a DataLoader, FFCA produces a 4-D *signature*
+per feature (Impact, Volatility, Non-linearity, Interaction), classifies each
+feature into one of 8 archetypes, and emits a report that flags overfitting,
+data leakage, shortcut learning, unstable feature roles, and prune-safe /
+load-bearing features.
 
 Works on tabular MLPs, CNNs (pixel- *or* channel-level), Transformer
-embeddings, and attention heads — all through the same primitives.
+embeddings, and attention heads — all through the same primitives. The
+adapter is the same; the math is the same; only the wrapper is per-arch.
 
 ---
 
@@ -26,6 +34,42 @@ pip install "ffca[netcdf]"                  # +xarray for scientific data (.nc f
 
 > The PyPI distribution is **`ffca`**, the import name is `ffca`, and the CLI
 > binary is **`ffca-report`**.
+
+## Framework support and limitations
+
+FFCA is **PyTorch-only**. Concretely:
+
+| Framework | Supported? | Why |
+|---|---|---|
+| **PyTorch** (`torch.nn.Module`) | ✅ Yes | All adapters / HVP / autograd code targets `torch.autograd`. |
+| **TensorFlow / Keras** (`.h5`, SavedModel, `tf.keras`) | ❌ No | Would need a parallel backend on `tf.GradientTape`. The wizard now detects `.py` files that `import tensorflow` / `keras` and gives a clean error instead of crashing. |
+| **JAX / Flax** | ❌ No (planned) | JAX's `jax.grad` / `jax.hessian` map cleanly to FFCA's math but the backend hasn't been written. |
+| **ONNX** | ❌ No | ONNX runtimes don't generally expose 2nd-order gradients. |
+
+**If you have a TF/Keras model and want to run FFCA on it:**
+
+1. **Port the architecture to PyTorch.** Most "standard" layers translate
+   directly:
+   - `tf.keras.layers.Conv2D` → `torch.nn.Conv2d`
+   - `BatchNormalization` → `nn.BatchNorm2d`
+   - `PReLU(shared_axes=[1,2])` → `nn.PReLU(num_parameters=channels)`
+   - `UpSampling2D(size=k)` → `nn.Upsample(scale_factor=k)`
+   - `SpatialDropout2D` → `nn.Dropout2d`
+   - `Add()` → element-wise `+`
+2. **Port the weights.** Keras Conv kernels are `(H, W, in, out)`; PyTorch is
+   `(out, in, H, W)`. BatchNorm uses different parameter names. There's no
+   built-in `keras2pt` converter in this package — you write a one-shot
+   script that reads the `.h5` with `h5py` and assembles a PyTorch
+   `state_dict`.
+3. **Then run FFCA** as normal on the PyTorch version.
+
+The repo includes one worked example of this at
+[`validation_runs/03_srdrn/srdrn_pytorch.py`](validation_runs/03_srdrn/srdrn_pytorch.py)
+— a hand-port of the SRDRN super-resolution architecture from Keras.
+
+**Roadmap.** TF/Keras and JAX backends are real engineering efforts (a few
+weeks each), not wrappers. Open a GitHub issue if you'd use one — that's the
+single most useful signal for prioritising backend work.
 
 ## Easiest way to run it — the interactive wizard
 
