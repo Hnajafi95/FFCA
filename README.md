@@ -35,6 +35,24 @@ pip install "ffca[netcdf]"                  # +xarray for scientific data (.nc f
 > The PyPI distribution is **`ffca`**, the import name is `ffca`, and the CLI
 > binary is **`ffca-report`**.
 
+### Optional: the FFCA diagnostic agent
+
+For an LLM-augmented layer over FFCA that turns each report into a layered
+diagnosis (executive summary, ranked actions with rule-level citations,
+and a findings appendix), see [`agent/`](agent/). The agent is independent
+of the FFCA package's core API: it consumes the same `report.json` the
+package emits and adds a deterministic rulebook plus an optional language-model
+narration layer.
+
+```bash
+pip install -e ./agent                  # deterministic rulebook + evaluator
+pip install -e "./agent[narrate]"       # + Anthropic SDK for narration
+python -m ffca_agent.cli report.json --narrate
+```
+
+Full quick-start, validation harness, and per-project configuration in
+[`agent/README.md`](agent/README.md).
+
 ## Framework support and limitations
 
 FFCA is **PyTorch-only**. Concretely:
