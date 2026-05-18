@@ -1,0 +1,20 @@
+# Extra dependencies for the case-study orchestrator. The core ffca_agent
+# package requirements are installed via `pip install -e .` from the repo root.
+#
+# Tabular cases:
+torch>=2.0
+scikit-learn>=1.3
+pandas>=2.0
+numpy>=1.24
+
+# FFCA package itself (PyTorch, sits at the sibling FFCA/FFCA_package directory
+# on the developer's Mac; on HPC, either pip-install it or sys.path-insert).
+# The orchestrator auto-resolves this via the FFCA_PKG_CANDIDATE path probe;
+# if that fails, install the package with: `pip install -e /path/to/FFCA_package`
+
+# Waterbirds (vision case — heavy, ~10 GB dataset download on first run):
+torchvision>=0.15
+wilds>=2.0
+
+# Optional: agent narration (`--narrate`)
+anthropic>=0.40

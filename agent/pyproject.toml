@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ffca-agent"
+version = "0.6.0"
+description = "Diagnostic agent and rulebook layer over FFCA (Feature-Function Curvature Analysis)."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Hamed Najafi", email = "hnaja002@fiu.edu" }]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.0",
+    "numpy>=1.24",
+    "ffca>=0.1.0a3",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+narrate = [
+    "anthropic>=0.40",
+]
+dev = [
+    "pytest>=7.0",
+    "anthropic>=0.40",
+]
+
+# Only `ffca_agent/` is a Python package. `rulebook/` is data (YAML),
+# `case_studies/` is scripts (run-not-imported), `tests/` is tests.
+[tool.setuptools.packages.find]
+include = ["ffca_agent*"]
+exclude = ["case_studies*", "rulebook*", "tests*"]
+
+# Ship the rulebook YAML alongside the package so installed users can resolve
+# the default rulebook path without depending on the source tree.
+[tool.setuptools.package-data]
+ffca_agent = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
