@@ -44,16 +44,29 @@ D. Determinism check
 Usage
 =====
 
-    python case_studies/v06_hpc_validation.py \\
-        --key-file /path/to/api_key.txt \\
+Setup first (only needed once):
+    cd <FFCA repo root>
+    pip install -e .
+    pip install -e ./agent
+    pip install shap captum     # for section B baselines
+
+Then run:
+    python agent/case_studies/v06_hpc_validation.py \\
+        --key-file /real/path/to/key.txt \\
         --out-dir results/v06_validation/
 
 Each section is gated by a CLI flag (default: all on):
 
     --skip-zoo --skip-baselines --skip-intent --skip-determinism
 
-Sections that need ANTHROPIC_API_KEY (C, D, optionally B for compared
-narration) silently skip if no key is provided. Section A is API-free.
+Sections C and D need ANTHROPIC_API_KEY. If you don't have one, run:
+    python agent/case_studies/v06_hpc_validation.py \\
+        --out-dir results/v06_validation/ \\
+        --skip-intent --skip-determinism
+
+Sections B, C, and D operate on 4 engineered cases that the script trains
+on first launch (~5 minutes on GPU). Re-launches reuse the cached
+artifacts.
 
 Cost estimate (with API key)
 ============================
@@ -108,10 +121,120 @@ try:
     _FFCA_AVAILABLE = True
 except ImportError:
     _FFCA_AVAILABLE = False
-    print("WARNING: ffca package not importable; sections A and B will skip.")
+
+
+def _fail_loud(msg: str) -> None:
+    """Print a prominent error then exit. Used for setup issues that must be
+    fixed before the script can do anything useful."""
+    print("", file=sys.stderr)
+    print("=" * 72, file=sys.stderr)
+    print(" FFCA AGENT VALIDATION — SETUP ERROR", file=sys.stderr)
+    print("=" * 72, file=sys.stderr)
+    print(msg, file=sys.stderr)
+    print("=" * 72, file=sys.stderr)
+    sys.exit(1)
+
+
+def _check_setup(args) -> None:
+    """Fail loud and early if the environment isn't ready for the requested
+    sections. Better to abort now than to silently produce an empty report."""
+    will_run_c = not args.skip_intent
+    will_run_d = not args.skip_determinism
+
+    if not _FFCA_AVAILABLE:
+        _fail_loud(
+            "The `ffca` Python package is not importable from this venv.\n"
+            "\n"
+            "Install from the repo root:\n"
+            "    cd <FFCA repo root>\n"
+            "    pip install -e .\n"
+            "    pip install -e ./agent\n"
+            "    pip install shap captum     # for section B baselines\n"
+            "\n"
+            "Then re-run this script."
+        )
+
+    if (will_run_c or will_run_d) and args.key_file is None:
+        _fail_loud(
+            "Sections C (intent ablation) and D (determinism) require an\n"
+            "Anthropic API key, but --key-file was not supplied.\n"
+            "\n"
+            "Either:\n"
+            "    1. Pass --key-file PATH where PATH is a real file containing\n"
+            "       the key on a single line, OR\n"
+            "    2. Pass --skip-intent --skip-determinism to opt out.\n"
+            "\n"
+            "(Sections A and B can run without an API key.)"
+        )
+    if args.key_file is not None:
+        key_path = Path(args.key_file).expanduser().resolve()
+        if not key_path.exists():
+            _fail_loud(
+                f"The key file you supplied does not exist:\n"
+                f"    {args.key_file}\n"
+                f"    (resolved to: {key_path})\n"
+                f"\n"
+                f"Did you copy a placeholder path? Check the path and re-run.\n"
+                f"To run only the non-API sections, pass:\n"
+                f"    --skip-intent --skip-determinism"
+            )
+        if not key_path.read_text().strip().startswith("sk-"):
+            print(f"WARNING: {key_path} does not start with 'sk-' — "
+                  f"may not be a valid Anthropic key.", file=sys.stderr)
 
 
 DEFAULT_RULEBOOK = REPO / "rulebook" / "ffca_rules.yaml"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Engineered-case bootstrap
+# ──────────────────────────────────────────────────────────────────────────
+# Sections B, C, and D operate on the 4 engineered tabular cases from
+# `case_studies/run_all.py` (credit_loan, california_housing_leak,
+# california_housing_spurious, bike_sharing). On HPC these don't exist yet,
+# so we train them in a single preamble step. The artifacts (report.json,
+# history.json, checkpoints/) land under `<out_dir>/engineered_cases/<name>/`.
+
+ENGINEERED_CASE_NAMES = [
+    "credit_loan",
+    "california_housing_leak",
+    "california_housing_spurious",
+    "bike_sharing",
+]
+
+
+def _bootstrap_engineered_cases(out_dir: Path, device: torch.device) -> Path:
+    """Train the 4 engineered tabular cases if their artifacts aren't present.
+
+    Returns the directory holding their per-case subfolders.
+    """
+    eng_dir = out_dir / "engineered_cases"
+    eng_dir.mkdir(parents=True, exist_ok=True)
+
+    sys.path.insert(0, str(SCRIPT_DIR))
+    import run_all  # noqa: E402
+
+    for name in ENGINEERED_CASE_NAMES:
+        case_dir = eng_dir / name
+        report_p = case_dir / "report.json"
+        if report_p.exists():
+            print(f"  [bootstrap:{name}] already present, skipping training")
+            continue
+        case = run_all.TABULAR_CASES.get(name)
+        if case is None:
+            print(f"  [bootstrap:{name}] WARNING: not in run_all.TABULAR_CASES; skipping")
+            continue
+        case_dir.mkdir(parents=True, exist_ok=True)
+        print(f"  [bootstrap:{name}] training (this case is engineered to "
+              f"exhibit {case.expected_rules or 'a known pathology'})")
+        try:
+            trained = run_all._train_tabular(case, case_dir, device)
+            run_all._run_ffca_tabular(case, trained, case_dir, device)
+            print(f"  [bootstrap:{name}] done")
+        except Exception as exc:
+            print(f"  [bootstrap:{name}] FAILED: {exc}")
+            traceback.print_exc()
+    return eng_dir
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -476,10 +599,12 @@ def _run_zoo_vision(section_dir: Path, rulebook: dict, device: torch.device) -> 
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def run_section_b(out_dir: Path, rulebook: dict, device: torch.device) -> dict:
-    """Run SHAP + Integrated Gradients on the 4 v0.5 tabular cases, compare
-    to FFCA Impact. Crucial: does SHAP/IG identify the engineered pathology
-    feature (leaked_target, spurious_feature) the way FFCA agent does?
+def run_section_b(out_dir: Path, rulebook: dict, device: torch.device,
+                  engineered_dir: Path) -> dict:
+    """Run SHAP + Integrated Gradients on the 4 engineered tabular cases,
+    compare to FFCA Impact. Crucial: does SHAP/IG identify the engineered
+    pathology feature (leaked_target, spurious_feature) the way FFCA agent
+    does?
     """
     section_dir = out_dir / "B_baselines"
     section_dir.mkdir(parents=True, exist_ok=True)
@@ -494,17 +619,19 @@ def run_section_b(out_dir: Path, rulebook: dict, device: torch.device) -> dict:
     except ImportError:
         return {"error": "captum not installed. pip install captum"}
 
-    # 4 tabular v0.5 cases (these were trained by case_studies/run_all.py)
-    v05_root = REPO / "FFCA_runs_results_v04_real"
     cases = [
         # (name, report_dir, engineered_feature_name_or_None)
-        ("credit_loan", v05_root / "credit_loan", None),
-        ("california_housing_leak", v05_root / "california_housing_leak", "leaked_target"),
-        ("california_housing_spurious", v05_root / "california_housing_spurious", "spurious_feature"),
-        ("bike_sharing", v05_root / "bike_sharing", None),
+        ("credit_loan",                  engineered_dir / "credit_loan", None),
+        ("california_housing_leak",      engineered_dir / "california_housing_leak", "leaked_target"),
+        ("california_housing_spurious",  engineered_dir / "california_housing_spurious", "spurious_feature"),
+        ("bike_sharing",                 engineered_dir / "bike_sharing", None),
     ]
     results: dict[str, dict] = {}
     for name, case_dir, engineered in cases:
+        if not (case_dir / "report.json").exists():
+            results[name] = {"error": f"engineered case artifacts missing at {case_dir}"}
+            print(f"  [B:baselines:{name}] SKIP: artifacts missing")
+            continue
         try:
             results[name] = _baseline_one_case(name, case_dir, engineered, rulebook)
             print(f"  [B:baselines:{name}] OK")
@@ -533,14 +660,16 @@ def _baseline_one_case(name: str, case_dir: Path, engineered: str | None,
     import run_all  # noqa: E402
 
     loader_map = {
-        "credit_loan": run_all._credit_loan_data if hasattr(run_all, "_credit_loan_data") else None,
-        "california_housing_leak": run_all._cal_housing_leak_data if hasattr(run_all, "_cal_housing_leak_data") else None,
-        "california_housing_spurious": run_all._cal_housing_spurious_data if hasattr(run_all, "_cal_housing_spurious_data") else None,
-        "bike_sharing": run_all._bike_sharing_data,
+        "credit_loan": getattr(run_all, "_credit_loan_data", None),
+        "california_housing_leak": getattr(run_all, "_california_housing_leaked_data", None),
+        "california_housing_spurious": getattr(run_all, "_california_housing_spurious_data", None),
+        "bike_sharing": getattr(run_all, "_bike_sharing_data", None),
     }
     if not loader_map.get(name):
         return {"error": f"no data loader found for {name} in run_all"}
-    Xtr, Xva, ytr, yva, feat_names, task = loader_map[name]()
+    loaded = loader_map[name]()
+    # run_all loaders return 6-tuple (X_tr, X_va, y_tr, y_va, feat_names, task)
+    Xtr, Xva, ytr, yva, feat_names, task = loaded[:6]
     n_in = Xtr.shape[1]
     n_out = (len(np.unique(ytr)) if task == "classification" else 1)
     device = _pick_device()
@@ -663,16 +792,20 @@ def _baseline_one_case(name: str, case_dir: Path, engineered: str | None,
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def _ablation_cases() -> list[dict]:
-    base = REPO / "FFCA_runs_results_v04_real"
+def _ablation_cases(engineered_dir: Path) -> list[dict]:
+    """The 4 engineered cases produced by _bootstrap_engineered_cases.
+
+    Each entry's `dir` points at the per-case subfolder of engineered_dir.
+    Sections C and D consume these.
+    """
     return [
-        {"label": "credit_loan", "dir": base / "credit_loan",
+        {"label": "credit_loan", "dir": engineered_dir / "credit_loan",
          "case_meta": CaseMeta(project_name="credit_loan_ablation",
                                 model_architecture=ModelArchitecture.MLP,
                                 task_type=TaskType.BINARY_CLASSIFICATION,
                                 target_name="credit_risk",
                                 domain="financial-risk modelling")},
-        {"label": "california_housing_leak", "dir": base / "california_housing_leak",
+        {"label": "california_housing_leak", "dir": engineered_dir / "california_housing_leak",
          "case_meta": CaseMeta(project_name="cal_leak_ablation",
                                 model_architecture=ModelArchitecture.MLP,
                                 task_type=TaskType.REGRESSION,
@@ -680,26 +813,26 @@ def _ablation_cases() -> list[dict]:
                                 target_units="$100k",
                                 domain="real-estate price prediction",
                                 feature_naming_convention="leaked_target = noisy copy of target")},
-        {"label": "waterbirds", "dir": base / "waterbirds",
-         "case_meta": CaseMeta(project_name="waterbirds_ablation",
-                                model_architecture=ModelArchitecture.CNN,
-                                task_type=TaskType.VISION_CLASSIFICATION,
-                                target_name="bird_class",
-                                domain="vision shortcut-learning benchmark",
-                                pretrained=True)},
-        {"label": "flooding_gate_24hr_after", "dir": base / "flooding_narrations/gate/after_24hr",
-         "report_path": Path("/Users/hnaja002/Documents/projects/compound_flooding/FFCA_results_After_prunning/Predicted Gate Opening/24hr_perfect_prog_gate_sigmoid/report.json"),
-         "case_meta": CaseMeta(project_name="compound_flooding_gate_ablation",
+        {"label": "california_housing_spurious", "dir": engineered_dir / "california_housing_spurious",
+         "case_meta": CaseMeta(project_name="cal_spurious_ablation",
                                 model_architecture=ModelArchitecture.MLP,
                                 task_type=TaskType.REGRESSION,
-                                target_name="water_level",
-                                target_units="cm",
-                                domain="coastal compound flooding",
-                                feature_naming_convention="_t-k=lag, _t+k=forecast, gate*=noisy gate proxy")},
+                                target_name="median_house_value",
+                                target_units="$100k",
+                                domain="real-estate price prediction",
+                                feature_naming_convention="spurious_feature is train-only correlated with target")},
+        {"label": "bike_sharing", "dir": engineered_dir / "bike_sharing",
+         "case_meta": CaseMeta(project_name="bike_sharing_ablation",
+                                model_architecture=ModelArchitecture.MLP,
+                                task_type=TaskType.REGRESSION,
+                                target_name="bike_rentals",
+                                target_units="rides/hour",
+                                domain="urban mobility forecasting")},
     ]
 
 
-def run_section_c(out_dir: Path, rulebook: dict, key_file: Path | None) -> dict:
+def run_section_c(out_dir: Path, rulebook: dict, key_file: Path | None,
+                  engineered_dir: Path) -> dict:
     """v0.6 intent ablation: same case under 5 intents, measure differences."""
     section_dir = out_dir / "C_intent_ablation"
     section_dir.mkdir(parents=True, exist_ok=True)
@@ -714,7 +847,7 @@ def run_section_c(out_dir: Path, rulebook: dict, key_file: Path | None) -> dict:
     intents = [NarrationIntent.AUDIT, NarrationIntent.DIAGNOSE,
                NarrationIntent.PRUNE, NarrationIntent.COMPARE, NarrationIntent.FREE]
     results: dict[str, dict] = {}
-    for case in _ablation_cases():
+    for case in _ablation_cases(engineered_dir):
         label = case["label"]
         report_path = case.get("report_path") or case["dir"] / "report.json"
         if not report_path.exists():
@@ -777,7 +910,7 @@ def run_section_c(out_dir: Path, rulebook: dict, key_file: Path | None) -> dict:
 
 
 def run_section_d(out_dir: Path, rulebook: dict, key_file: Path | None,
-                  n_reruns: int = 3) -> dict:
+                  engineered_dir: Path, n_reruns: int = 3) -> dict:
     """Re-run identical (case_meta + intent + sig_summary) 3 times per case."""
     section_dir = out_dir / "D_determinism"
     section_dir.mkdir(parents=True, exist_ok=True)
@@ -788,7 +921,7 @@ def run_section_d(out_dir: Path, rulebook: dict, key_file: Path | None,
     key = key_file.read_text().strip()
     narrator = Narrator(api_key=key)
 
-    cases = _ablation_cases()[:2]  # first 2 cases only
+    cases = _ablation_cases(engineered_dir)[:2]  # first 2 cases only
     out: dict[str, dict] = {}
     for case in cases:
         label = case["label"]
@@ -1026,6 +1159,9 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
+    # Fail loud on setup issues BEFORE running anything.
+    _check_setup(args)
+
     _seed_everything(args.seed)
     device = _pick_device()
     print(f"Running on device: {device}")
@@ -1035,42 +1171,63 @@ def main() -> int:
     rulebook = load_rulebook(args.rulebook)
     key_file = Path(args.key_file).expanduser().resolve() if args.key_file else None
 
+    # Bootstrap the 4 engineered cases on disk so sections B, C, D can read them.
+    needs_engineered = not (args.skip_baselines and args.skip_intent and args.skip_determinism)
+    engineered_dir: Path | None = None
+    if needs_engineered:
+        print("\n=== Bootstrap: engineered tabular cases (for sections B/C/D) ===")
+        try:
+            engineered_dir = _bootstrap_engineered_cases(out_dir, device)
+        except Exception as exc:
+            print(f"  bootstrap FAILED: {exc}")
+            traceback.print_exc()
+            engineered_dir = None
+
     section_results: dict[str, Any] = {}
 
-    if not args.skip_zoo and _FFCA_AVAILABLE:
+    if not args.skip_zoo:
         print("\n=== Section A: Model-zoo false-positive sweep ===")
         try:
             section_results["A"] = run_section_a(out_dir, rulebook, device,
                                                   include_vision=args.include_vision_zoo)
         except Exception as exc:
             section_results["A"] = {"error": str(exc), "traceback": traceback.format_exc()}
-    elif args.skip_zoo:
+    else:
         section_results["A"] = {"skipped": "--skip-zoo"}
 
-    if not args.skip_baselines and _FFCA_AVAILABLE:
+    if not args.skip_baselines:
         print("\n=== Section B: SHAP / IG vs FFCA Impact ===")
-        try:
-            section_results["B"] = run_section_b(out_dir, rulebook, device)
-        except Exception as exc:
-            section_results["B"] = {"error": str(exc), "traceback": traceback.format_exc()}
-    elif args.skip_baselines:
+        if engineered_dir is None:
+            section_results["B"] = {"skipped": "engineered_dir unavailable"}
+        else:
+            try:
+                section_results["B"] = run_section_b(out_dir, rulebook, device, engineered_dir)
+            except Exception as exc:
+                section_results["B"] = {"error": str(exc), "traceback": traceback.format_exc()}
+    else:
         section_results["B"] = {"skipped": "--skip-baselines"}
 
     if not args.skip_intent:
         print("\n=== Section C: v0.6 intent ablation ===")
-        try:
-            section_results["C"] = run_section_c(out_dir, rulebook, key_file)
-        except Exception as exc:
-            section_results["C"] = {"error": str(exc), "traceback": traceback.format_exc()}
+        if engineered_dir is None:
+            section_results["C"] = {"skipped": "engineered_dir unavailable"}
+        else:
+            try:
+                section_results["C"] = run_section_c(out_dir, rulebook, key_file, engineered_dir)
+            except Exception as exc:
+                section_results["C"] = {"error": str(exc), "traceback": traceback.format_exc()}
     else:
         section_results["C"] = {"skipped": "--skip-intent"}
 
     if not args.skip_determinism:
         print("\n=== Section D: Determinism ===")
-        try:
-            section_results["D"] = run_section_d(out_dir, rulebook, key_file)
-        except Exception as exc:
-            section_results["D"] = {"error": str(exc), "traceback": traceback.format_exc()}
+        if engineered_dir is None:
+            section_results["D"] = {"skipped": "engineered_dir unavailable"}
+        else:
+            try:
+                section_results["D"] = run_section_d(out_dir, rulebook, key_file, engineered_dir)
+            except Exception as exc:
+                section_results["D"] = {"error": str(exc), "traceback": traceback.format_exc()}
     else:
         section_results["D"] = {"skipped": "--skip-determinism"}
 

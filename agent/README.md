@@ -97,6 +97,25 @@ script (`case_studies/v06_hpc_validation.py`) runs four independent
 experiments — model-zoo false-positive sweep, SHAP/IG/FFCA head-to-head,
 v0.6 intent ablation, determinism re-runs.
 
+To run the full validation on a fresh machine (after `pip install -e .`
++ `pip install -e ./agent` + `pip install shap captum`):
+
+```bash
+python agent/case_studies/v06_hpc_validation.py \
+    --key-file /path/to/real_anthropic_key.txt \
+    --out-dir results/v06_validation/
+```
+
+The script auto-trains the 4 engineered tabular cases on first launch
+(~5 min on GPU); sections B / C / D consume those artifacts. To run
+without an API key:
+
+```bash
+python agent/case_studies/v06_hpc_validation.py \
+    --out-dir results/v06_validation/ \
+    --skip-intent --skip-determinism
+```
+
 ## Two paper-level corrections this work surfaced
 
 The original FFCA paper (Najafi/Luo/Liu, 2025) claims two things the
