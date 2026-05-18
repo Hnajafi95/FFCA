@@ -1,0 +1,707 @@
+# FFCA Rulebook v0.2
+#
+# Each rule operationalizes a passage from the FFCA paper (Najafi, Luo, Liu 2025,
+# arXiv:2510.27207) OR a generic structural property of the 4D signature space.
+# Rules with paper_ref starting "heuristic:" are agent-side conventions, not
+# paper claims; they're still useful but should not be cited as paper findings.
+#
+# Validate with: python rulebook/validate.py rulebook/ffca_rules.yaml
+#
+# Signal namespace (resolved by the agent's evaluator against a report):
+#   feature.<field>                : impact | volatility | nonlinearity | interaction
+#                                     | archetype | trust_decision | name | impact_curve
+#                                     | volatility_curve | interaction_curve | impact_epoch0
+#                                     | nonlinearity_ratio | impact_ratio_epoch0 | volatility_rank
+#   model.<field>                  : impact_mean | impact_max | impact_min | impact_p95
+#                                     | impact_cov | impact_concentration_top20_pct
+#                                     | impact_concentration_top5_pct | interaction_mean
+#                                     | nonlinearity_mean | volatility_mean | n_features
+#                                     | n_checkpoints | checkpoint_drift_l2_pct
+#                                     | top_nonlinear_drivers | top_hidden_interactors
+#                                     | archetype_dist.<snake>_pct | _count | _features
+#                                       (snake: noise | simple_workhorse | stable_contributor |
+#                                               nonlinear_driver | volatile_specialist |
+#                                               hidden_interactor | interactive_catalyst |
+#                                               complex_driver)
+#   training.<field>               : val_score_final | train_score_final | val_train_gap
+#                                     | val_score_curve | train_score_curve | volatility_curve
+#                                     | impact_curve_topk_mean | interaction_curve_topk_mean
+#   trust.<bucket>.<field>         : count | fraction | fraction_pct | feature_list
+#                                     (bucket: confident_keep|keep_stable|monitor|
+#                                              investigate|confident_prune)
+#   cosens.<field>                 : best_nc_fraction | best_nc_fraction_pct
+#                                     | bootstrap_ari | permutation_p | silhouette | n_groups
+#   vision.<field>                 : fbr_curve | com_distance_curve | minority_acc_curve
+#
+# Trigger ops:
+#   Comparison: >, >=, <, <=, ==, !=, in, not_in, approx_eq
+#   Time-series:
+#     spike_detected      — value: "epoch_0"|"early_epochs"|"late_epochs"|"any_epoch"
+#                            OR numeric (threshold_ratio with when=any_epoch)
+#                            OR {when, threshold_ratio, baseline_fraction, window_fraction}
+#     plateau_detected    — value: true OR {relative_improvement, tail_fraction}
+#     collapse_detected   — value: numeric (absolute final threshold)
+#                            OR {final_threshold, relative_to: "absolute"|"initial"}
+
+version: "0.5.0"
+ffca_paper_ref: "Najafi, Luo, Liu (2025) Feature-Function Curvature Analysis (arXiv:2510.27207)"
+
+rules:
+
+  # ═══ A. Feature-role descriptors (Table 5) ════════════════════════════════
+  # AGGREGATED: one finding per archetype, not per feature. The finding lists
+  # how many features fall in each archetype and names the top-impact members.
+
+  - id: archetype_simple_workhorse
+    name: "Simple Workhorse features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Simple Workhorse"
+    triggers:
+      - signal: model.archetype_dist.simple_workhorse_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.simple_workhorse_count} features are Simple Workhorses — powerful, reliable, direct contributors with stable linear effects."
+    recommendation: "Trust global explanations on these. Use Partial Dependence Plots to visualize and confirm linear behavior."
+    evidence_template: "Features ({model.archetype_dist.simple_workhorse_pct:.0f}% of model): {model.archetype_dist.simple_workhorse_features}."
+    paper_ref: "Table 5 row 1"
+
+  - id: archetype_stable_contributor
+    name: "Stable Contributor features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Stable Contributor"
+    triggers:
+      - signal: model.archetype_dist.stable_contributor_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.stable_contributor_count} features are Stable Contributors — reliable secondary drivers, consistent but not dominant signals."
+    recommendation: "Acknowledge as secondary. Trust them; do not make them the focus of feature engineering."
+    evidence_template: "Features ({model.archetype_dist.stable_contributor_pct:.0f}% of model): {model.archetype_dist.stable_contributor_features}."
+    paper_ref: "Table 5 row 2"
+
+  - id: archetype_noise_candidate
+    name: "Noise Candidate features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Noise Candidate"
+    triggers:
+      - signal: model.archetype_dist.noise_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.noise_count} features classified as Noise Candidates — the model has effectively ignored them."
+    recommendation: "Candidates for pruning. Confirm against checkpoint stability (cross-reference with trust_prune_recommended) before removing — a feature that is Noise at the final checkpoint but had useful epochs is risky to drop."
+    evidence_template: "Features ({model.archetype_dist.noise_pct:.0f}% of model): {model.archetype_dist.noise_features}."
+    paper_ref: "Table 5 row 3"
+
+  - id: archetype_nonlinear_driver
+    name: "Non-linear Driver features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Non-linear Driver"
+    triggers:
+      - signal: model.archetype_dist.nonlinear_driver_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.nonlinear_driver_count} features are Non-linear Drivers — strong but curved relationships (diminishing returns, U-shapes, thresholds)."
+    recommendation: "Do not trust a linear interpretation of these. Use 1D PDP or ICE plots to visualize the curve."
+    evidence_template: "Features ({model.archetype_dist.nonlinear_driver_pct:.0f}% of model): {model.archetype_dist.nonlinear_driver_features}."
+    paper_ref: "Table 5 row 4"
+
+  - id: archetype_volatile_specialist
+    name: "Volatile Specialist features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Volatile Specialist"
+    triggers:
+      - signal: model.archetype_dist.volatile_specialist_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.volatile_specialist_count} features are Volatile Specialists — powerful but context-dependent, with effects that change with other feature values."
+    recommendation: "Perform sliced analysis on these. Do not analyze globally. Group data by suspected context-switchers and inspect local behaviors."
+    evidence_template: "Features ({model.archetype_dist.volatile_specialist_pct:.0f}% of model): {model.archetype_dist.volatile_specialist_features}."
+    confidence_factors:
+      - "Volatile Specialist is also the FFCA fingerprint for spurious correlations (App C.6); cross-check against spurious_correlation_volatile_specialist before recommending a sliced analysis."
+    paper_ref: "Table 5 row 5"
+
+  - id: archetype_hidden_interactor
+    name: "Hidden Interactor features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Hidden Interactor"
+    triggers:
+      - signal: model.archetype_dist.hidden_interactor_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.hidden_interactor_count} features are Hidden Interactors — little direct effect on their own but critical when combined with specific partners."
+    recommendation: "Stop analyzing in isolation. Use 2D PDPs or SHAP interaction plots to identify partners and quantify joint effects."
+    evidence_template: "Features ({model.archetype_dist.hidden_interactor_pct:.0f}% of model): {model.archetype_dist.hidden_interactor_features}."
+    paper_ref: "Table 5 row 6"
+
+  - id: archetype_interactive_catalyst
+    name: "Interactive Catalyst features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Interactive Catalyst"
+    triggers:
+      - signal: model.archetype_dist.interactive_catalyst_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.interactive_catalyst_count} features are Interactive Catalysts — strong direct impact AND hubs of interactions, amplifying other features."
+    recommendation: "Analyze both direct and joint effects. 1D PDPs for their individual role, 2D PDPs for their top interaction partners."
+    evidence_template: "Features ({model.archetype_dist.interactive_catalyst_pct:.0f}% of model): {model.archetype_dist.interactive_catalyst_features}."
+    paper_ref: "Table 5 row 7"
+
+  - id: archetype_complex_driver
+    name: "Complex Driver features present"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    archetype_hint: "Complex Driver"
+    triggers:
+      - signal: model.archetype_dist.complex_driver_count
+        op: ">"
+        value: 0
+    diagnosis: "{model.archetype_dist.complex_driver_count} features are Complex Drivers — powerful in multiple ways simultaneously (non-linear, volatile, and interactive)."
+    recommendation: "These need the most analysis effort. No single explanation will suffice — use local + global + sliced + interaction analysis."
+    evidence_template: "Features ({model.archetype_dist.complex_driver_pct:.0f}% of model): {model.archetype_dist.complex_driver_features}."
+    paper_ref: "Table 5 row 8"
+
+  # ═══ B. Model-capacity rules (Table 6, §5.1–5.2) ══════════════════════════
+
+  - id: healthy_archetype_distribution
+    name: "Healthy archetype distribution"
+    kind: descriptor
+    category: model_capacity
+    scope: model_wide
+    triggers:
+      - signal: model.archetype_dist.noise_pct
+        op: "<"
+        value: 40
+        description: "Noise is not dominant."
+      - signal: model.archetype_dist.interactive_catalyst_pct
+        op: ">"
+        value: 5
+        description: "At least some load-bearing interactive features exist."
+    diagnosis: "Model shows a diverse mix of feature roles — no single archetype dominates and load-bearing Catalysts are present."
+    recommendation: "Capacity appears adequate. Proceed to per-feature analysis."
+    evidence_template: "Noise={model.archetype_dist.noise_pct:.1f}%, Catalyst={model.archetype_dist.interactive_catalyst_pct:.1f}%, Complex={model.archetype_dist.complex_driver_pct:.1f}%."
+    confidence_factors:
+      - "Thresholds (Noise<40%, Catalyst>5%) are heuristic, not derived from the paper. Treat as a positive signal, not a guarantee."
+    paper_ref: "heuristic: derived from §4 (archetype space) + compound-flooding case study"
+
+  - id: insufficient_capacity
+    name: "Insufficient model capacity"
+    kind: diagnostic
+    category: model_capacity
+    scope: dynamic
+    severity: warn
+    trigger_logic: any
+    triggers:
+      - signal: model.nonlinearity_mean
+        op: "<"
+        value: 0.001
+        description: "Model produces virtually zero Nonlinearity across features — architecture cannot represent curvature at all (e.g., a pure-linear model). v0.5: this is the directly-observable signal; the archetype-pct triggers below depend on the FFCA classifier which currently mislabels features in linear models as Complex Driver."
+      - signal: model.archetype_dist.complex_driver_pct
+        op: "<"
+        value: 15
+        description: "Complex Drivers fail to develop (<15% of features). v0.3: threshold raised from 5% to handle small-feature datasets where one feature is already 9% (Wine has 11 features → 1 Complex Driver = 9% used to wrongly pass)."
+      - signal: model.archetype_dist.interactive_catalyst_pct
+        op: "<"
+        value: 15
+        description: "Few Catalysts develop (<15%) — limited interactive hubs. v0.3: raised from 5%."
+    diagnosis: "Model is under-parameterized. Interaction and non-linearity scores fail to develop (mean Nonlinearity={model.nonlinearity_mean:.4f}); the architecture cannot capture the structure in the data."
+    recommendation: "Increase model depth or width, or add non-linear activations. If a pure-linear baseline was deliberate, this finding is the expected ceiling for that architecture."
+    evidence_template: "mean Nonlinearity={model.nonlinearity_mean:.4f}, Complex Driver={model.archetype_dist.complex_driver_pct:.1f}%, Catalyst={model.archetype_dist.interactive_catalyst_pct:.1f}%; mean Interaction={model.interaction_mean:.4f}."
+    paper_ref: "Table 6 row 2, §5.2 (Credit Loan low-cap R²=0.25). v0.5: trigger_logic relaxed to `any` and a directly-observable mean Nonlinearity trigger added, since FFCA's archetype classifier was assigning Complex Driver to features of pure-linear models (Nonlinearity=0 by construction)."
+
+  - id: archetype_imbalance_noise_dominant
+    name: "Noise archetype dominates"
+    kind: diagnostic
+    category: model_capacity
+    scope: model_wide
+    severity: warn
+    triggers:
+      - signal: model.archetype_dist.noise_pct
+        op: ">"
+        value: 50
+    diagnosis: "Over half the features ({model.archetype_dist.noise_pct:.0f}%) are Noise Candidates — the model is using a small fraction of its inputs."
+    recommendation: "Either prune the noise features and retrain (see trust_prune_recommended for the safe set), or investigate why the model isn't using them (broken normalization? dead ReLUs? insufficient training?)."
+    evidence_template: "Noise fraction = {model.archetype_dist.noise_pct:.1f}% (>50% threshold)."
+    paper_ref: "heuristic; observed in compound-flooding pre-pruning runs"
+
+  - id: archetype_imbalance_noise_extreme
+    name: "Noise archetype is extreme (>70%)"
+    kind: diagnostic
+    category: model_capacity
+    scope: model_wide
+    severity: critical
+    triggers:
+      - signal: model.archetype_dist.noise_pct
+        op: ">"
+        value: 70
+    diagnosis: "{model.archetype_dist.noise_pct:.0f}% of features are Noise — the model is effectively running on a small handful of inputs. This is not a 'use less data' situation; it's a model-is-broken situation."
+    recommendation: "Do not prune yet. First check: (1) feature scaling / normalization, (2) dead-neuron rate in early layers, (3) whether the model converged at all. If everything looks fine and noise is still extreme, the architecture is over-sized for this dataset."
+    evidence_template: "Noise fraction = {model.archetype_dist.noise_pct:.1f}% (>70% threshold)."
+    paper_ref: "heuristic"
+
+  - id: model_degenerate_single_archetype
+    name: "Model is degenerate — single archetype dominates (>90%)"
+    kind: diagnostic
+    category: model_capacity
+    scope: model_wide
+    severity: critical
+    trigger_logic: any
+    triggers:
+      - signal: model.archetype_dist.simple_workhorse_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.noise_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.nonlinear_driver_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.volatile_specialist_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.hidden_interactor_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.interactive_catalyst_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.complex_driver_pct
+        op: ">"
+        value: 90
+      - signal: model.archetype_dist.stable_contributor_pct
+        op: ">"
+        value: 90
+    diagnosis: "More than 90% of features have the same archetype. Either the model has collapsed into a trivial regime, or the signature granularity is too coarse to distinguish your features."
+    recommendation: "Sanity-check the model's predictions on held-out data first. If accuracy is genuinely good, the model may be trivial-but-correct. If accuracy is poor, the model has collapsed and needs a different architecture or initialization."
+    evidence_template: "Archetype distribution shows extreme concentration."
+    paper_ref: "heuristic"
+
+  - id: hidden_interactor_dominant
+    name: "Hidden Interactors dominate the model"
+    kind: diagnostic
+    category: model_capacity
+    scope: model_wide
+    severity: warn
+    triggers:
+      - signal: model.archetype_dist.hidden_interactor_pct
+        op: ">"
+        value: 30
+    diagnosis: "{model.archetype_dist.hidden_interactor_pct:.0f}% of features are Hidden Interactors — features whose value comes from synergy, not their own slope. The model is doing most of its work through pairwise interactions."
+    recommendation: "Single-feature attribution methods (SHAP, IG, occlusion) will mislead users on this model — they assign zero importance to features whose effect is entirely synergistic. Recommend 2D PDPs, SHAP interaction values, or H-statistic analyses for any production explanation."
+    evidence_template: "Hidden Interactors = {model.archetype_dist.hidden_interactor_pct:.1f}%; top: {model.top_hidden_interactors}."
+    paper_ref: "Table 5 row 6 (archetype definition); heuristic threshold"
+
+  # ═══ C. Saliency-distribution diagnostics (NEW) ═══════════════════════════
+
+  - id: feature_concentration_pareto
+    name: "Pareto concentration — top 20% carry most Impact"
+    kind: descriptor
+    category: model_capacity
+    scope: model_wide
+    triggers:
+      - signal: model.impact_concentration_top20_pct
+        op: ">"
+        value: 80
+    diagnosis: "Top 20% of features carry {model.impact_concentration_top20_pct:.0f}% of total Impact. Healthy long-tail distribution — the bottom features are pruning candidates."
+    recommendation: "Investigate the long tail for prune candidates. Cross-reference trust_prune_recommended for safe removals."
+    evidence_template: "Top 20% Impact share = {model.impact_concentration_top20_pct:.1f}% (Pareto threshold 80%)."
+    paper_ref: "heuristic"
+
+  - id: feature_concentration_extreme
+    name: "Extreme concentration — top 5% carry most Impact"
+    kind: diagnostic
+    category: model_capacity
+    scope: model_wide
+    severity: warn
+    triggers:
+      - signal: model.impact_concentration_top5_pct
+        op: ">"
+        value: 80
+    diagnosis: "{model.impact_concentration_top5_pct:.0f}% of total Impact comes from the top 5% of features. The model is over-reliant on a small set — robustness risk if any of these features become unreliable in production."
+    recommendation: "Identify the load-bearing features (cross-reference trust_keep_recommended). Add monitoring for distribution shift on these specifically. Consider ensemble or feature-dropout regularization for redundancy."
+    evidence_template: "Top 5% Impact share = {model.impact_concentration_top5_pct:.1f}% (threshold 80%)."
+    paper_ref: "heuristic"
+
+  - id: numerical_saturation
+    name: "Numerical saturation — Impact magnitudes are degenerate"
+    kind: diagnostic
+    category: data_pathology
+    scope: model_wide
+    severity: critical
+    trigger_logic: any
+    triggers:
+      - signal: model.impact_max
+        op: "<"
+        value: 0.000001
+        description: "Max |gradient| is essentially zero across all features (<1e-6)."
+      - signal: model.impact_max
+        op: ">"
+        value: 1000000.0
+        description: "Max |gradient| is exploding (>1e6)."
+    diagnosis: "Model Impact magnitudes are pathological (max = {model.impact_max:.2e}). Either gradients have vanished (model outputs constant) or they've exploded (numerical instability)."
+    recommendation: "Stop interpreting this report. Check: (1) activation saturation (sigmoid/tanh going flat), (2) feature scaling, (3) learning-rate divergence, (4) loss-function value. FFCA output is unreliable when gradients are degenerate."
+    evidence_template: "Impact max = {model.impact_max:.2e}, mean = {model.impact_mean:.2e}."
+    paper_ref: "heuristic: signature integrity check"
+
+  - id: silent_features_present
+    name: "Silent features detected"
+    kind: descriptor
+    category: feature_role
+    scope: model_wide
+    triggers:
+      - signal: trust.confident_prune.fraction
+        op: ">"
+        value: 0.10
+        description: "At least 10% of features are confidently silent."
+    diagnosis: "{trust.confident_prune.count} features have effectively zero gradient signal across all checkpoints — they contribute nothing to predictions."
+    recommendation: "These are the safest pruning targets. See trust_prune_recommended for the named list."
+    evidence_template: "Silent features ({trust.confident_prune.fraction_pct:.0f}% of model): see trust_prune_recommended for names."
+    paper_ref: "heuristic"
+
+  # ═══ D. Training-dynamics rules (Table 6, §5.1, App C.3) ══════════════════
+
+  - id: hierarchical_learning_confirmed
+    name: "Hierarchical learning confirmed"
+    kind: descriptor
+    category: training_dynamics
+    scope: model_wide
+    triggers:
+      - signal: model.n_checkpoints
+        op: ">="
+        value: 5
+        description: "Need at least 5 checkpoints to estimate growth rates meaningfully."
+      - signal: model.interaction_to_impact_growth_ratio
+        op: ">"
+        value: 2.0
+        description: "Top-k Interaction grew >2× as fast as top-k Impact across training — interactions developed AFTER basic linear effects."
+    diagnosis: "The model is learning in healthy stages — linear effects first, then interactions. Top-k Interaction grew {model.interaction_to_impact_growth_ratio:.1f}× as much as top-k Impact across training, the canonical hierarchical-learning signature."
+    recommendation: "Do not expect complex interactions to develop until basic linear relationships are mastered. Trust early-stopping decisions based on this staging."
+    evidence_template: "Interaction/Impact growth ratio = {model.interaction_to_impact_growth_ratio:.1f} (threshold > 2.0) across {model.n_checkpoints} checkpoints."
+    paper_ref: "Table 6 row 1, §5.2 Fig 1 (Credit Loan high-cap). v0.3 reformulation: relative growth rate replaces the brittle spike-then-plateau detector — real training curves often grow monotonically without a clean plateau."
+
+  - id: overfitting_volatility_spike
+    name: "Overfitting alarm via Volatility spike"
+    kind: diagnostic
+    category: training_dynamics
+    scope: dynamic
+    severity: warn
+    triggers:
+      - signal: training.volatility_curve
+        op: "spike_detected"
+        value: 1.4
+        description: "Sharp sustained rise in mean Volatility — paper threshold ~1.4× early-training median (App C.3 Fig 9)."
+      - signal: training.val_train_gap
+        op: ">"
+        value: 0.5
+        description: "Validation/training divergence exceeds 0.5 (normalized magnitude). v0.5: replaces plateau_detected trigger — bike_sharing-style overfitting can keep improving val_loss while train_loss falls faster, producing a large gap without a flat val curve. Gap captures both `val plateaus while train keeps falling` and `val starts climbing` failure modes."
+    diagnosis: "Volatility spike (ratio {ratio:.2f}× early median) co-occurs with a {training.val_train_gap:.2f} train/val gap — the model is fitting sample-specific quirks rather than learning stable rules. Early-warning signature of overfitting."
+    recommendation: "Stop training, reduce learning rate, or apply stronger regularization. The volatility signal often precedes clear val-loss divergence; the gap confirms train and val have decoupled."
+    evidence_template: "Volatility spike at epoch {epoch}, ratio {ratio:.2f}× baseline (>1.4 trigger); val/train gap {training.val_train_gap:.2f} (>0.5 trigger)."
+    confidence_factors:
+      - "Cross-check with spurious_correlation_train_val_gap — both look similar in the aggregate volatility plot but spurious correlation is per-feature dominance, this rule is model-wide overfitting."
+    paper_ref: "Table 6 row 4, App C.3 Fig 9 (Bike Sharing, epoch ~120). v0.5: plateau trigger replaced with val_train_gap to also catch gap-style overfitting where val_loss keeps improving but lags train_loss."
+
+  - id: convergence_achieved
+    name: "Signature has converged across checkpoints"
+    kind: descriptor
+    category: training_dynamics
+    scope: model_wide
+    triggers:
+      - signal: model.n_checkpoints
+        op: ">="
+        value: 3
+      - signal: model.checkpoint_drift_l2_pct
+        op: "<"
+        value: 5
+    diagnosis: "Signature L2 drift between the last two checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has converged into stable feature roles."
+    recommendation: "Trust the per-feature findings in this report. Further training is unlikely to change feature interpretations meaningfully."
+    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% across {model.n_checkpoints} checkpoints."
+    paper_ref: "heuristic: signature stability check"
+
+  - id: late_checkpoint_drift
+    name: "Signature still drifting in late training"
+    kind: diagnostic
+    category: training_dynamics
+    scope: model_wide
+    severity: warn
+    triggers:
+      - signal: model.n_checkpoints
+        op: ">="
+        value: 3
+      - signal: model.checkpoint_drift_l2_pct
+        op: ">"
+        value: 20
+    diagnosis: "Signature L2 drift between the last two checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has not converged. Per-feature interpretations in this report may not reproduce on the next checkpoint."
+    recommendation: "Train more epochs before drawing pruning or architectural conclusions. Pruning decisions made now will not be stable."
+    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% (>20% threshold) across {model.n_checkpoints} checkpoints."
+    paper_ref: "heuristic"
+
+  # ═══ E. Data-pathology rules (App C.6) ════════════════════════════════════
+
+  - id: data_leakage_immediate_dominance
+    name: "Data leakage — one feature dominates from the start without overfitting"
+    kind: diagnostic
+    category: data_pathology
+    scope: per_feature
+    severity: critical
+    triggers:
+      - signal: feature.impact_dominance
+        op: ">"
+        value: 5.0
+        description: "Feature's Impact is >5× the mean Impact across all features — one feature carries the model."
+      - signal: feature.impact_saturation
+        op: ">"
+        value: 0.85
+        description: "Feature's Impact at the first checkpoint is already >85% of its final value — the model 'found the answer key' immediately, no learning needed."
+      - signal: training.val_train_gap
+        op: "<"
+        value: 0.25
+        description: "Train and val scores close — no significant overfitting, consistent with leakage (vs spurious correlation, which DIVERGES with gap > 0.5). v0.4: loosened from 0.10 to 0.25 — regression metrics can show 10-20% gap noise from a single epoch's stochasticity even on a perfectly-leaked model."
+    diagnosis: "Data leakage suspected on {feature.name}. Its Impact is {feature.impact_dominance:.1f}× the model-wide mean AND was already at {feature.impact_saturation:.0%} of its final value at the first checkpoint — the model 'found the answer key' immediately. The near-zero val/train gap ({training.val_train_gap:.3f}) confirms the model isn't overfitting; it's reading the target directly."
+    recommendation: "Audit the feature engineering pipeline for {feature.name}. Likely culprits: feature computed from the target, post-target temporal information, or a noisy copy of the label. Remove and re-train."
+    evidence_template: "{feature.name}: Impact dominance = {feature.impact_dominance:.1f}×, saturation = {feature.impact_saturation:.2f}, val/train gap = {training.val_train_gap:.3f}."
+    paper_ref: "App C.6 Figs 18-19 (Housing leakage); revised in v0.3 to work for regression AND classification metrics."
+
+  - id: spurious_correlation_train_val_gap
+    name: "Spurious correlation — high-impact feature with train/val divergence"
+    kind: diagnostic
+    category: data_pathology
+    scope: per_feature
+    severity: critical
+    triggers:
+      - signal: feature.impact_dominance
+        op: ">"
+        value: 3.0
+        description: "Feature carries significantly more than average Impact (>3× mean) — the model relies on it heavily."
+      - signal: training.val_train_gap
+        op: ">"
+        value: 0.5
+        description: "Large train-vs-val divergence (>50% relative). The model fits train well but generalizes badly."
+    diagnosis: "Spurious-correlation pattern on {feature.name}. The feature carries {feature.impact_dominance:.1f}× mean Impact AND the model fits train far better than val (gap {training.val_train_gap:.2f}). This is the canonical 'high-impact feature whose correlation with the target doesn't hold at validation time' fingerprint."
+    recommendation: "Investigate {feature.name}'s relationship with the target across train vs val splits. If the correlation only holds in train, remove or stratify on the feature. Audit data collection for split-specific artifacts."
+    evidence_template: "{feature.name}: Impact dominance = {feature.impact_dominance:.1f}×, val/train gap = {training.val_train_gap:.2f}; archetype = {feature.archetype}."
+    paper_ref: "App C.6 Figs 16-17 (Housing spurious_feature). v0.3 revision drops the archetype gate — paper conflated 'Volatile Specialist' with spurious correlation, but empirically spurious features can land in any high-Impact archetype."
+
+  # ═══ F. Stability / Trust-Score rules ═════════════════════════════════════
+
+  - id: trust_instability_high
+    name: "High trust-instability across checkpoints"
+    kind: diagnostic
+    category: stability
+    scope: dynamic
+    severity: warn
+    triggers:
+      - signal: trust.investigate.fraction
+        op: ">"
+        value: 0.5
+    diagnosis: "{trust.investigate.fraction_pct:.0f}% of features changed archetype between checkpoints. The model has not settled into stable feature roles — either still training, or the data is noisy enough that different epochs use the features differently."
+    recommendation: "Train more epochs, or use a learning-rate schedule that converges sooner. If accuracy is good but features are unstable, the model is an ensemble in disguise."
+    evidence_template: "{trust.investigate.count}/{model.n_features} features have INVESTIGATE decision ({trust.investigate.fraction_pct:.0f}%)."
+    confidence_factors:
+      - "If pruning INVESTIGATE features improves stability AND preserves skill (as in the compound-flooding case), the original instability was caused by over-parameterization rather than meaningful checkpoint flips."
+    paper_ref: "Implicit in §6 future work (production drift); operationalized in compound-flooding case study"
+
+  - id: monitor_bucket_dominant
+    name: "Most features are borderline (MONITOR)"
+    kind: diagnostic
+    category: stability
+    scope: model_wide
+    severity: warn
+    triggers:
+      - signal: trust.monitor.fraction
+        op: ">"
+        value: 0.4
+    diagnosis: "{trust.monitor.fraction_pct:.0f}% of features fall in the MONITOR bucket — between clearly-keep and clearly-prune. The model has not committed to feature roles strongly."
+    recommendation: "Train more epochs before making pruning decisions. Decisions made on a model dominated by borderline features will not be reproducible."
+    evidence_template: "MONITOR features = {trust.monitor.count} ({trust.monitor.fraction_pct:.0f}%)."
+    paper_ref: "heuristic"
+
+  - id: trust_keep_recommended
+    name: "Load-bearing features identified"
+    kind: descriptor
+    category: stability
+    scope: model_wide
+    triggers:
+      - signal: trust.confident_keep.fraction
+        op: ">"
+        value: 0.05
+    diagnosis: "{trust.confident_keep.count} features ({trust.confident_keep.fraction_pct:.0f}% of model) are stably important across all checkpoints — they kept a useful archetype (Workhorse / Catalyst / Stable Contributor) at every checkpoint."
+    recommendation: "Treat these as the backbone of the model. Do not prune. Add extra logging in production. Removing or changing them will be felt in accuracy."
+    evidence_template: "Confidently keep: {trust.confident_keep.feature_list}."
+    paper_ref: "Implicit in §6; operationalized in compound-flooding case study"
+
+  - id: trust_prune_recommended
+    name: "Safe-prune candidates (stable Noise)"
+    kind: descriptor
+    category: stability
+    scope: model_wide
+    triggers:
+      - signal: trust.confident_prune.fraction
+        op: ">"
+        value: 0.05
+    diagnosis: "{trust.confident_prune.count} features ({trust.confident_prune.fraction_pct:.0f}% of model) are confidently Noise across all checkpoints — they were Noise at every checkpoint with high stability."
+    recommendation: "Prune these; expect no accuracy loss. They are the safest pruning targets — never important, not just unimportant at the end."
+    evidence_template: "Confidently prune: {trust.confident_prune.feature_list}."
+    paper_ref: "Implicit in §6; operationalized in compound-flooding case study"
+
+  - id: trust_volatility_contradiction
+    name: "Feature stable across checkpoints but volatile within a checkpoint"
+    kind: diagnostic
+    category: stability
+    scope: per_feature
+    severity: warn
+    triggers:
+      - signal: feature.trust_decision
+        op: "=="
+        value: "CONFIDENTLY KEEP"
+      - signal: feature.volatility
+        op: ">"
+        value: 0.01
+        description: "Absolute volatility above a small floor."
+      - signal: feature.volatility_rank
+        op: "<="
+        value: 5
+        description: "Feature is in the top-5 most volatile."
+    diagnosis: "{feature.name} is trusted across checkpoints (CONFIDENTLY KEEP) but has top-rank Volatility within the final checkpoint — its gradient is stable in expectation but noisy in any individual prediction."
+    recommendation: "Investigate whether this feature's effect changes by data slice. If yes, it's a Volatile Specialist disguised by checkpoint averaging. If no, suspect input-distribution noise or batch-norm interactions."
+    evidence_template: "{feature.name}: trust=KEEP, Volatility={feature.volatility:.4f} (rank #{feature.volatility_rank})."
+    paper_ref: "heuristic: cross-check between trust score and within-checkpoint volatility"
+
+  # ═══ G. Co-Sensitivity functional-group rules ═════════════════════════════
+
+  - id: cosens_abort_no_prune_safe
+    name: "Co-Sensitivity refused to recommend pruning"
+    kind: descriptor
+    category: co_sensitivity
+    scope: model_wide
+    triggers:
+      - signal: cosens.best_nc_fraction
+        op: "<"
+        value: 0.5
+    diagnosis: "No functional group is noise-dominated (best group has {cosens.best_nc_fraction_pct:.0f}% Noise Candidates, threshold 50%)."
+    recommendation: "Co-Sensitivity pruning is not warranted. Use magnitude-based or movement pruning if compression is needed; do not remove features clustered into mixed-utility groups."
+    evidence_template: "k={cosens.n_groups} groups, best NC={cosens.best_nc_fraction_pct:.0f}%, silhouette={cosens.silhouette:.2f}, perm-p={cosens.permutation_p:.3f}, bootstrap ARI={cosens.bootstrap_ari:.2f}."
+    paper_ref: "Implicit in §6; operationalized in compound-flooding co-sensitivity reports"
+
+  - id: cosens_prune_candidate_group
+    name: "Co-Sensitivity identified a prune-safe group"
+    kind: diagnostic
+    category: co_sensitivity
+    scope: model_wide
+    severity: info
+    triggers:
+      - signal: cosens.best_nc_fraction
+        op: ">"
+        value: 0.5
+        description: "A whole group is noise-dominated."
+      - signal: cosens.permutation_p
+        op: "<"
+        value: 0.05
+        description: "Clustering is statistically distinguishable from random."
+      - signal: cosens.bootstrap_ari
+        op: ">="
+        value: 0.5
+        description: "Clustering is stable under 80%-bootstrap resampling."
+    diagnosis: "A coherent functional group meets all three gates for safe pruning (NC>{cosens.best_nc_fraction_pct:.0f}%, perm-p<0.05, ARI≥0.5)."
+    recommendation: "Safe to remove the entire group. Re-train and confirm no skill loss; highest-confidence FFCA prune signal."
+    evidence_template: "Group passes: NC={cosens.best_nc_fraction_pct:.0f}%, perm-p={cosens.permutation_p:.3f}, ARI={cosens.bootstrap_ari:.2f}."
+    paper_ref: "Implicit in §6"
+
+  - id: cosens_weak_clustering_significant
+    name: "Co-Sensitivity clustering is significant but fuzzy"
+    kind: diagnostic
+    category: co_sensitivity
+    scope: model_wide
+    severity: info
+    triggers:
+      - signal: cosens.permutation_p
+        op: "<"
+        value: 0.05
+        description: "Permutation test distinguishes the clustering from random."
+      - signal: cosens.silhouette
+        op: "<"
+        value: 0.25
+        description: "Silhouette below 0.25 — clusters overlap substantially."
+    diagnosis: "Functional groups exist (perm-p={cosens.permutation_p:.3f}) but are fuzzy (silhouette={cosens.silhouette:.2f}). Features co-vary in groups, but the group boundaries are not sharp."
+    recommendation: "Group-level pruning is not safe with this clustering quality. Single-feature decisions are still valid. Consider increasing the cosens k parameter or re-running on more data."
+    evidence_template: "perm-p={cosens.permutation_p:.3f}, silhouette={cosens.silhouette:.2f}, ARI={cosens.bootstrap_ari:.2f}."
+    paper_ref: "heuristic"
+
+  # ═══ H. Vision-specific rules (App C.4 Waterbirds) ════════════════════════
+
+  - id: shortcut_learning_drift_epoch
+    name: "CNN shortcut learning — background-reliance drift (paper fingerprint)"
+    kind: diagnostic
+    category: vision_shortcut
+    scope: dynamic
+    severity: critical
+    triggers:
+      - signal: vision.fbr_curve
+        op: "collapse_detected"
+        value: 0.5
+        description: "Foreground/Background Ratio drops below 0.5 (paper threshold ~0.4)."
+      - signal: vision.com_distance_curve
+        op: "spike_detected"
+        value: "any_epoch"
+        description: "Center-of-Mass distance grows — attention drifts away from image center."
+      - signal: vision.minority_acc_curve
+        op: "plateau_detected"
+        value: true
+        description: "Minority-group accuracy stagnates while overall accuracy improves."
+    diagnosis: "Shortcut learning detected at epoch {epoch}. Attention has shifted from foreground to background, and minority-group accuracy stagnates — the classic Waterbirds failure mode."
+    recommendation: "Apply distributionally-robust optimization (e.g., Group DRO), reweight minority groups, or augment with background-randomized samples. Stop training before the drift epoch if the foreground signature is still strong."
+    evidence_template: "FBR collapse to ratio {ratio:.2f}× initial at epoch {epoch}."
+    paper_ref: "App C.4 Figs 11-13, Table 7 (Waterbirds drift epoch 9)"
+
+  - id: shortcut_learning_minority_gap
+    name: "CNN shortcut learning — majority/minority accuracy gap"
+    kind: diagnostic
+    category: vision_shortcut
+    scope: dynamic
+    severity: critical
+    triggers:
+      - signal: vision.majority_minority_gap_max
+        op: ">"
+        value: 0.10
+        description: "Peak (overall_acc − minority_acc) gap exceeds 10pp. v0.5: this is the behavioural signature of shortcut learning — overall accuracy is propped up by the majority groups while minority-group accuracy lags."
+    diagnosis: "Shortcut learning detected via majority/minority gap. Peak (overall − minority) gap = {vision.majority_minority_gap_max:.2%}: the model is propped up by the majority groups while failing on the minority groups that break the shortcut. This works even when attribution maps (FBR/COM) don't cleanly migrate to background — the model can attend to the foreground AND exploit the background simultaneously."
+    recommendation: "Apply Group DRO or reweight minority groups; augment with background-randomized samples. If FBR remained high, the model's attention map is misleading — behavioural metrics on group-balanced splits are required."
+    evidence_template: "Peak (overall − minority) gap = {vision.majority_minority_gap_max:.2%} (>10pp trigger)."
+    confidence_factors:
+      - "This rule fires from behavioural metrics alone. Cross-check with shortcut_learning_drift_epoch — if both fire, the model is attention-AND-behaviour shortcutting; if only this one fires, the attribution maps look healthy but the model still has a shortcut."
+    paper_ref: "App C.4 Table 7 (Waterbirds group-balanced eval). v0.5: added as an alternative to the FBR/COM/minority-plateau fingerprint after pretrained ResNet-18 trainings showed a 17pp gap with FBR going up (not collapsing)."
+
+  # ═══ I. Prescriptive rules (§5.3) ═════════════════════════════════════════
+
+  - id: linear_baseline_will_fail
+    name: "Linear baseline will be insufficient"
+    kind: diagnostic
+    category: prescriptive
+    scope: model_wide
+    severity: info
+    triggers:
+      - signal: model.archetype_dist.hidden_interactor_pct
+        op: ">"
+        value: 5
+        description: "Material number of Hidden Interactors — synergistic effects exist."
+      - signal: model.archetype_dist.nonlinear_driver_pct
+        op: ">"
+        value: 5
+        description: "Material number of Non-linear Drivers — curvature exists."
+    diagnosis: "A pure linear model will fail on this task. FFCA detected Hidden Interactors ({model.archetype_dist.hidden_interactor_pct:.0f}%) and Non-linear Drivers ({model.archetype_dist.nonlinear_driver_pct:.0f}%) — single-term linear regression cannot represent the curvature or synergy these features encode."
+    recommendation: "Engineer derived features for the linear model: (a) squared terms for Non-linear Drivers like {model.top_nonlinear_drivers}, (b) multiplicative interaction terms between Hidden Interactors like {model.top_hidden_interactors} and their top partners. The paper showed R² 0.0093 → 0.6970 on Credit Loan using this recipe."
+    evidence_template: "Top Non-linear Drivers: {model.top_nonlinear_drivers}. Top Hidden Interactors: {model.top_hidden_interactors}."
+    paper_ref: "§5.3 (Cross-model validation for feature engineering)"
