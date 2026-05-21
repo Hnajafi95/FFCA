@@ -24,10 +24,22 @@ class TrustScore:
         stability_threshold: float = 0.7,
         unstable_threshold: float = 0.5,
         similarity_scale: float = 1.5,
+        importance_keep_pct: float = 50.0,
+        importance_prune_pct: float = 10.0,
     ):
         self.stability_threshold = stability_threshold
         self.unstable_threshold = unstable_threshold
         self.similarity_scale = similarity_scale
+        # Importance percentiles for the H2/H3 fix: features whose mean
+        # cross-checkpoint Impact is at-or-above the `importance_keep_pct`
+        # percentile of the cross-feature distribution earn CONFIDENTLY KEEP
+        # when stable, regardless of dominant archetype. Features at-or-below
+        # `importance_prune_pct` earn CONFIDENTLY PRUNE regardless of
+        # stability — a near-zero-impact feature that flips archetype between
+        # Noise and Stable Contributor due to floating-point noise should not
+        # be labelled INVESTIGATE.
+        self.importance_keep_pct = importance_keep_pct
+        self.importance_prune_pct = importance_prune_pct
         self.S = similarity_matrix(scale=similarity_scale)
         self.results: dict = {}
 
@@ -78,6 +90,10 @@ class TrustScore:
             epoch_impacts[t] = imp
 
         H_max = self._max_weighted_entropy(T)
+        # Importance percentiles across features for the H2/H3 fix.
+        feat_mean_imp = epoch_impacts.mean(axis=0)
+        imp_keep = float(np.percentile(feat_mean_imp, self.importance_keep_pct))
+        imp_prune = float(np.percentile(feat_mean_imp, self.importance_prune_pct))
         trust = {}
         for i, name in enumerate(names):
             archs = epoch_archs[:, i]
@@ -88,9 +104,22 @@ class TrustScore:
             importance = float(epoch_impacts[:, i].mean())
             dominant = int(np.argmax(counts))
 
-            if stability >= self.stability_threshold:
+            # H3: low-importance override — a feature with near-zero mean
+            # Impact is prune-safe regardless of stability. Picking it up
+            # here prevents floating-point archetype flips from earning a
+            # spurious INVESTIGATE label on essentially-dead features.
+            if importance <= imp_prune and dominant == 0:
+                decision = "CONFIDENTLY PRUNE"
+            elif stability >= self.stability_threshold:
                 if dominant == 0:
                     decision = "CONFIDENTLY PRUNE"
+                # H2: any high-importance stable feature is load-bearing
+                # — not just Workhorse / Catalyst / Stable Contributor. A
+                # stable Nonlinear Driver or Hidden Interactor with top-
+                # quartile mean Impact is just as much a backbone as a
+                # Workhorse and deserves the CONFIDENTLY KEEP label.
+                elif importance >= imp_keep:
+                    decision = "CONFIDENTLY KEEP"
                 elif dominant in (2, 3, 6):
                     decision = "CONFIDENTLY KEEP"
                 else:
