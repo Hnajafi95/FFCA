@@ -20,7 +20,7 @@ import json
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Literal, Sequence
 
 import numpy as np
 import torch
@@ -28,10 +28,31 @@ import torch
 from . import diagnostics as _diag
 from .checkpoint import CheckpointLoader
 from .core.adapter import FFCAModelAdapter
+from .core.aggregation import (
+    aggregate_signatures,
+    ensemble_trust_decisions,
+    ensemble_trust_summary,
+)
 from .core.archetypes import ARCHETYPE_NAMES, classify
 from .core.derivatives import compute_signature_core
 from .core.signature import FFCASignature
 from .improvements_pkg import CauchyHVP, CoSensitivityGroups, TrustScore
+
+
+class _EnsembleTrustWrapper:
+    """Minimal stand-in for TrustScore in ensemble mode.
+
+    Exposes the same `.results` (per-feature dict) and `.summary()` (counts)
+    interface so downstream serialization, diagnostics, and the report
+    markdown can consume it uniformly. The semantics are different — see
+    `ffca.core.aggregation.ensemble_trust_decisions`.
+    """
+
+    def __init__(self, decisions: dict):
+        self.results = decisions
+
+    def summary(self) -> dict:
+        return ensemble_trust_summary(self.results)
 
 
 class FFCAReport:
@@ -49,6 +70,7 @@ class FFCAReport:
         n_cosens_permutations: int = 50,
         n_cosens_bootstrap: int = 20,
         improvements: bool | dict = True,
+        mode: Literal["trajectory", "ensemble"] = "trajectory",
     ):
         self.adapter = adapter
         self.loader = loader
@@ -60,6 +82,9 @@ class FFCAReport:
         self.n_cauchy_samples = n_cauchy_samples
         self.n_cosens_permutations = n_cosens_permutations
         self.n_cosens_bootstrap = n_cosens_bootstrap
+        if mode not in ("trajectory", "ensemble"):
+            raise ValueError(f"mode must be 'trajectory' or 'ensemble', got {mode!r}")
+        self.mode = mode
 
         # improvements gate: True = all three audit-v2 algorithms;
         # False = baseline FFCA paper (correlation-proxy interaction, no Trust, no Co-Sens);
@@ -76,11 +101,16 @@ class FFCAReport:
         # populated by .run()
         self.signatures: list[FFCASignature] = []
         self.checkpoint_labels: list[str] = []
-        self.trust: TrustScore | None = None
+        self.trust: TrustScore | _EnsembleTrustWrapper | None = None
         self.cosens: CoSensitivityGroups | None = None
         self.last_gradients: np.ndarray | None = None
         self.timing: dict[str, float] = {}
         self.findings: list[_diag.Finding] = []
+        # Ensemble-mode bookkeeping (None in trajectory mode)
+        self._per_seed_signatures: list[FFCASignature] | None = None
+        self._per_seed_labels: list[str] | None = None
+        self._per_seed_gradients: list[np.ndarray] | None = None
+        self.seed_stats: dict | None = None
 
     # --------------------------------------------------------------- pipeline
     def _signature_one(self, adapter: FFCAModelAdapter) -> tuple[FFCASignature, np.ndarray]:
@@ -132,13 +162,17 @@ class FFCAReport:
     def run(self, checkpoints: CheckpointLoader | None = None) -> "FFCAReport":
         t0 = time.time()
         if checkpoints is None:
-            print(f"FFCAReport: single checkpoint (no CheckpointLoader given)")
+            print(f"FFCAReport: single checkpoint (no CheckpointLoader given) [mode={self.mode}]")
             sig, grads = self._signature_one(self.adapter)
             self.signatures = [sig]
             self.checkpoint_labels = ["current"]
             self.last_gradients = grads
         else:
-            print(f"FFCAReport: {len(checkpoints)} checkpoint(s)")
+            print(f"FFCAReport: {len(checkpoints)} checkpoint(s) [mode={self.mode}]")
+            # In ensemble mode, retain all per-seed gradients for later aggregation
+            collect_grads = (self.mode == "ensemble")
+            if collect_grads:
+                self._per_seed_gradients = []
             for label, model in checkpoints:
                 self.adapter.model = model  # swap underlying model
                 # Re-probe channel adapters in case shapes shifted (unlikely
@@ -150,16 +184,47 @@ class FFCAReport:
                 self.signatures.append(sig)
                 self.checkpoint_labels.append(label)
                 self.last_gradients = grads
+                if collect_grads:
+                    self._per_seed_gradients.append(grads)
                 print(f"  ckpt '{label}' done in {time.time() - t_ckpt:.1f}s")
         self.timing["signatures_s"] = time.time() - t0
 
-        # Trust Score across checkpoints (only meaningful for ≥ 2)
-        if self.use_trust and len(self.signatures) >= 2:
+        # Aggregate per-seed signatures into one if running in ensemble mode.
+        # After this branch, downstream code sees a single aggregate signature.
+        if self.mode == "ensemble" and len(self.signatures) >= 2:
+            t_agg = time.time()
+            self._per_seed_signatures = list(self.signatures)
+            self._per_seed_labels = list(self.checkpoint_labels)
+            aggregate, seed_stats = aggregate_signatures(self._per_seed_signatures)
+            self.signatures = [aggregate]
+            self.checkpoint_labels = ["aggregate"]
+            self.seed_stats = seed_stats
+            # v0.8 (2026-05-20): row-concatenate per-seed gradients for
+            # Co-Sensitivity instead of averaging across seeds. Averaging
+            # gradients before correlating cancels opposite-sign seeds and
+            # destroys the very co-variation Co-Sens is meant to detect.
+            # Row-concat treats each seed-sample pair as an independent
+            # observation of the gradient distribution, which preserves
+            # cross-seed structure inside the correlation matrix.
+            if self._per_seed_gradients:
+                self.last_gradients = np.vstack(self._per_seed_gradients)
+            self.timing["aggregation_s"] = time.time() - t_agg
+            print(f"  Aggregation across {len(self._per_seed_signatures)} seeds done in {self.timing['aggregation_s']:.2f}s")
+
+        # Trust Score — branch on mode
+        if self.use_trust:
             t1 = time.time()
-            self.trust = TrustScore()
-            self.trust.compute(self.signatures, self.signatures[0].feature_names)
+            if self.mode == "ensemble" and self.seed_stats is not None:
+                decisions = ensemble_trust_decisions(self.signatures[0], self.seed_stats)
+                self.trust = _EnsembleTrustWrapper(decisions)
+            elif self.mode == "trajectory" and len(self.signatures) >= 2:
+                self.trust = TrustScore()
+                self.trust.compute(self.signatures, self.signatures[0].feature_names)
+            else:
+                self.trust = None
             self.timing["trust_s"] = time.time() - t1
-            print(f"  TrustScore done in {self.timing['trust_s']:.1f}s")
+            if self.trust is not None:
+                print(f"  Trust ({self.mode}) done in {self.timing['trust_s']:.2f}s")
 
         # Co-Sensitivity on the last checkpoint's gradients
         if self.use_cosens:
@@ -185,7 +250,7 @@ class FFCAReport:
         t3 = time.time()
         self.findings = _diag.run_all(
             self.signatures, self.checkpoint_labels,
-            trust=self.trust, cosens=self.cosens,
+            trust=self.trust, cosens=self.cosens, mode=self.mode,
         )
         self.timing["diagnostics_s"] = time.time() - t3
         crit = sum(1 for f in self.findings if f.severity == "critical")
@@ -197,7 +262,8 @@ class FFCAReport:
 
     # --------------------------------------------------------------- output
     def to_dict(self) -> dict:
-        return {
+        d = {
+            "mode": self.mode,
             "n_checkpoints": len(self.signatures),
             "checkpoint_labels": self.checkpoint_labels,
             "feature_names": self.signatures[0].feature_names if self.signatures else None,
@@ -213,6 +279,21 @@ class FFCAReport:
             "findings": [f.to_dict() for f in self.findings],
             "timing": self.timing,
         }
+        if self.mode == "ensemble":
+            d["n_seeds"] = len(self._per_seed_signatures) if self._per_seed_signatures else 0
+            d["per_seed_labels"] = self._per_seed_labels
+            # seed_stats arrays are numpy; convert for JSON
+            if self.seed_stats:
+                ss_json = {}
+                for k, v in self.seed_stats.items():
+                    if k == "archetype_matrix":
+                        continue  # too large; can be reconstructed if needed
+                    if hasattr(v, "tolist"):
+                        ss_json[k] = v.tolist()
+                    else:
+                        ss_json[k] = v
+                d["seed_stats"] = ss_json
+        return d
 
     def save(self, out_dir: str | Path, *,
              save_plots: bool = True,
@@ -333,7 +414,9 @@ class FFCAReport:
                 "CONFIDENTLY KEEP": "stable + important — load-bearing",
                 "KEEP (stable)": "stable but moderate importance",
                 "CONFIDENTLY PRUNE": "stable + always Noise — safe to remove",
-                "INVESTIGATE (unstable)": "archetype flipped — role uncertain",
+                "INVESTIGATE (unstable)": "archetype flipped across epochs — role uncertain",
+                "INVESTIGATE (multi-modal seeds)":
+                    "seeds disagree on archetype — accept ensemble, do not prune",
                 "MONITOR (borderline)": "stability between 0.5 and 0.7",
             }
             for dec, n in sorted(summary.items(), key=lambda x: -x[1]):
