@@ -81,12 +81,17 @@ def classify(
     x_r = _ranks(np.asarray(interaction))
 
     arch = np.empty(n, dtype=int)
+    # First-match wins. WORKHORSE and STABLE_CONTRIBUTOR were previously
+    # under-constrained: their binary fingerprint is (I=1, V=0, N=0, X=0)
+    # but the rules did not gate on N, so a feature with high I AND high N
+    # was classified as WORKHORSE instead of NONLINEAR_DRIVER. Add the N
+    # constraint to make the rule match the fingerprint.
     for i in range(n):
         if i_r[i] < 0.3 and v_r[i] < 0.3 and n_r[i] < 0.3 and x_r[i] < 0.3:
             arch[i] = Archetype.NOISE
         elif x_r[i] > 0.75 and i_r[i] < 0.5:
             arch[i] = Archetype.HIDDEN_INTERACTOR
-        elif i_r[i] > 0.7 and v_r[i] < 0.3 and x_r[i] < 0.3:
+        elif i_r[i] > 0.7 and v_r[i] < 0.3 and n_r[i] < 0.3 and x_r[i] < 0.3:
             arch[i] = Archetype.WORKHORSE
         elif i_r[i] > 0.5 and x_r[i] > 0.75:
             arch[i] = Archetype.CATALYST
@@ -94,7 +99,7 @@ def classify(
             arch[i] = Archetype.NONLINEAR_DRIVER
         elif v_r[i] > 0.7:
             arch[i] = Archetype.VOLATILE_SPECIALIST
-        elif i_r[i] > 0.5:
+        elif i_r[i] > 0.5 and v_r[i] < 0.5 and n_r[i] < 0.5 and x_r[i] < 0.5:
             arch[i] = Archetype.STABLE_CONTRIBUTOR
         else:
             arch[i] = Archetype.COMPLEX_DRIVER
