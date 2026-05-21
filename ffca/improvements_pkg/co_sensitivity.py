@@ -152,10 +152,12 @@ class CoSensitivityGroups:
                 rec = "REVIEW — significant noise"
             else:
                 rec = "KEEP — mostly useful"
+            full_members = np.where(mask)[0].tolist()
             groups[c] = {
                 "size": size,
                 "medoid": int(medoids[c]),
-                "channels": np.where(mask)[0][:10].tolist(),
+                "channels": full_members[:10],       # legacy: first 10 only
+                "channels_full": full_members,        # v0.7: complete list
                 "nc_fraction": round(nc_frac, 3),
                 "mean_impact": round(float(np.asarray(impact)[mask].mean()), 4)
                     if impact is not None and size else None,
@@ -169,6 +171,13 @@ class CoSensitivityGroups:
         passes_perm = (not run_guardrails) or np.isnan(p_perm) or p_perm < 0.05
         passes_ari = (not run_guardrails) or np.isnan(ari_med) or ari_med >= 0.5
 
+        # `abort_recommended` is True when Co-Sens declines to recommend
+        # any prune — either no group is noise-dominated, or the
+        # clustering itself fails the permutation/bootstrap gates. Name
+        # kept for backward compatibility with existing report.json
+        # consumers; the positively-named `prune_safe_group_found` is
+        # the inverted form and is what new code should prefer.
+        prune_unsafe = bool(abort or not passes_perm or not passes_ari)
         self.diagnostics = {
             "k": k,
             "silhouette_observed": float(obs_sil),
@@ -176,7 +185,8 @@ class CoSensitivityGroups:
             "permutation_p": p_perm,
             "bootstrap_ari_median": ari_med,
             "best_nc_fraction": best_nc,
-            "abort_recommended": bool(abort or not passes_perm or not passes_ari),
+            "abort_recommended": prune_unsafe,
+            "prune_safe_group_found": not prune_unsafe,
         }
         self.results = groups
         return groups
