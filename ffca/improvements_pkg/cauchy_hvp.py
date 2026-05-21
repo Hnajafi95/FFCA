@@ -92,8 +92,16 @@ class CauchyHVP:
             out = adapter.scalar_output(x, batch_for_scalar)
             try:
                 grad = torch.autograd.grad(out, x, create_graph=True)[0]
-            except RuntimeError:
-                # output independent of x — all Hessian rows are zero.
+            except RuntimeError as exc:
+                # We only want to swallow the "output independent of x"
+                # case (Hessian rows are identically zero). Other
+                # RuntimeErrors — CUDA OOM, double-backward not
+                # implemented, graph reuse — should surface so the user
+                # sees a real failure rather than silently-zero
+                # interactions.
+                msg = str(exc).lower()
+                if "does not require grad" not in msg and "differentiable" not in msg:
+                    raise
                 if row_l1 is None:
                     row_l1 = torch.zeros(d, dtype=self.dtype)
                     diag_abs = torch.zeros(d, dtype=self.dtype)
@@ -166,7 +174,13 @@ class CauchyHVP:
         row_l1_np = (row_l1 / n_used).numpy()
         diag_np = (diag_abs / n_used).numpy()
         interactions = np.maximum(row_l1_np - diag_np, 0.0)
-        se = (math.pi / 2) * row_l1_np / max(math.sqrt(B), 1.0)
+        # SE of the row-L1 estimator: the (pi/2) factor is the asymptotic
+        # Cauchy-median scale. We average over both B probes AND n_used
+        # samples, so the effective Monte-Carlo sample count is B*n_used;
+        # use sqrt(B*n_used) in the denominator. The earlier sqrt(B)
+        # denominator silently produced CI widths that were sqrt(n_used)
+        # wider than the actual uncertainty in the estimate.
+        se = (math.pi / 2) * row_l1_np / max(math.sqrt(B * max(n_used, 1)), 1.0)
         ci_lower = np.maximum(interactions - 1.96 * se, 0.0)
         ci_upper = interactions + 1.96 * se
 

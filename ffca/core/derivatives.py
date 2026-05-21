@@ -78,9 +78,14 @@ def compute_diag_hessian(
         out = adapter.scalar_output(x, batch)
         try:
             grad = torch.autograd.grad(out, x, create_graph=True)[0]
-        except RuntimeError:
+        except RuntimeError as exc:
             # output is constant in x (e.g. ChannelAdapter spliced where only
-            # linear ops follow). Hessian-diag is identically zero.
+            # linear ops follow). Hessian-diag is identically zero. Other
+            # RuntimeErrors (OOM, non-differentiable backward, graph reuse)
+            # are real failures and should surface.
+            msg = str(exc).lower()
+            if "does not require grad" not in msg and "differentiable" not in msg:
+                raise
             diag_zero = np.zeros((b, d), dtype=np.float64)
             diag = diag_zero
             take = min(b, n_samples - samples_seen)
