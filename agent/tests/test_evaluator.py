@@ -136,7 +136,11 @@ def test_noise_dominant_fires(rulebook, tmp_path):
 
 # ── trust-score rules ──────────────────────────────────────────────────────
 
-def test_trust_instability_high_fires(rulebook, tmp_path):
+def test_trust_instability_high_epoch_axis_fires(rulebook, tmp_path):
+    """v0.7 split: trust_instability_high was renamed and split into
+    epoch-axis and seed-axis variants. The epoch-axis variant requires
+    case.checkpoint_kind=='epoch' to fire."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     # 7/10 features in INVESTIGATE → 70% > 50% threshold
     trust = {f"f{i}": "INVESTIGATE (unstable)" for i in range(7)}
     trust.update({f"f{i}": "CONFIDENTLY KEEP" for i in range(7, 10)})
@@ -149,10 +153,33 @@ def test_trust_instability_high_fires(rulebook, tmp_path):
     p = tmp_path / "r.json"
     p.write_text(json.dumps(raw))
     ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
     findings = evaluate_rulebook(rulebook, ctx)
-    instability = [f for f in findings if f.rule_id == "trust_instability_high"]
-    assert instability, f"expected trust_instability_high to fire, got {[f.rule_id for f in findings]}"
+    instability = [f for f in findings if f.rule_id == "trust_instability_high_epoch_axis"]
+    assert instability, f"expected trust_instability_high_epoch_axis to fire, got {[f.rule_id for f in findings]}"
     assert instability[0].severity == "warn"
+
+
+def test_trust_multi_modal_seeds_fires_on_seed_axis(rulebook, tmp_path):
+    """Companion to the test above: on a seed-axis case the same
+    INVESTIGATE rate fires trust_multi_modal_seeds instead."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
+    trust = {f"f{i}": "INVESTIGATE (multi-modal seeds)" for i in range(7)}
+    trust.update({f"f{i}": "CONFIDENTLY KEEP" for i in range(7, 10)})
+    raw = _synthetic_report(
+        feature_names=[f"f{i}" for i in range(10)],
+        archetypes=[3]*10,
+        impact=[0.5]*10,
+        trust_decisions=trust,
+    )
+    p = tmp_path / "r.json"
+    p.write_text(json.dumps(raw))
+    ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.SEED))
+    findings = evaluate_rulebook(rulebook, ctx)
+    multi_modal = [f for f in findings if f.rule_id == "trust_multi_modal_seeds"]
+    assert multi_modal, f"expected trust_multi_modal_seeds to fire, got {[f.rule_id for f in findings]}"
+    assert multi_modal[0].severity == "warn"
 
 
 def test_trust_keep_recommended_fires_when_features_present(rulebook, tmp_path):
@@ -375,6 +402,9 @@ def test_silent_features_present_fires(rulebook, tmp_path):
 
 
 def test_convergence_achieved_fires_when_drift_low(rulebook, tmp_path):
+    """Epoch-axis-only rule; requires case_meta.checkpoint_kind=epoch
+    after the v0.7 gating fix."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     # All checkpoints identical → 0% drift
     raw = _synthetic_report(
         feature_names=[f"f{i}" for i in range(5)],
@@ -383,13 +413,19 @@ def test_convergence_achieved_fires_when_drift_low(rulebook, tmp_path):
         n_checkpoints=5,
         checkpoint_drift_factor=0.0,
     )
-    findings = _write_and_eval(raw, rulebook, tmp_path)
+    p = tmp_path / "r.json"
+    p.write_text(json.dumps(raw))
+    ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
+    findings = evaluate_rulebook(rulebook, ctx)
     fired = {f.rule_id for f in findings}
     assert "convergence_achieved" in fired
     assert "late_checkpoint_drift" not in fired
 
 
 def test_late_checkpoint_drift_fires_when_drift_high(rulebook, tmp_path):
+    """Epoch-axis-only rule; same gating as convergence_achieved."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     # Strong checkpoint scaling → big drift between last two
     raw = _synthetic_report(
         feature_names=[f"f{i}" for i in range(5)],
@@ -398,10 +434,37 @@ def test_late_checkpoint_drift_fires_when_drift_high(rulebook, tmp_path):
         n_checkpoints=5,
         checkpoint_drift_factor=0.3,
     )
-    findings = _write_and_eval(raw, rulebook, tmp_path)
+    p = tmp_path / "r.json"
+    p.write_text(json.dumps(raw))
+    ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
+    findings = evaluate_rulebook(rulebook, ctx)
     fired = {f.rule_id for f in findings}
     assert "late_checkpoint_drift" in fired
     assert "convergence_achieved" not in fired
+
+
+def test_epoch_axis_rules_do_not_fire_on_seed_axis(rulebook, tmp_path):
+    """Confirm the gating actually gates: even with low drift, the
+    convergence_achieved rule must not fire on a declared seed-axis
+    case. Prevents the seed-vs-epoch bug from recurring."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
+    raw = _synthetic_report(
+        feature_names=[f"f{i}" for i in range(5)],
+        archetypes=[2] * 5,
+        impact=[0.5] * 5,
+        n_checkpoints=5,
+        checkpoint_drift_factor=0.0,
+    )
+    p = tmp_path / "r.json"
+    p.write_text(json.dumps(raw))
+    ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.SEED))
+    findings = evaluate_rulebook(rulebook, ctx)
+    fired = {f.rule_id for f in findings}
+    assert "convergence_achieved" not in fired
+    assert "late_checkpoint_drift" not in fired
+    assert "hierarchical_learning_confirmed" not in fired
 
 
 def test_monitor_bucket_dominant_fires(rulebook, tmp_path):

@@ -80,6 +80,10 @@ class ReportContext:
     training: dict[str, Any] = field(default_factory=dict)
     vision: dict[str, Any] = field(default_factory=dict)
 
+    # case context (provided externally via attach_case_meta). Used by the
+    # evaluator to gate rules with `applies_when: case.X == 'value'`.
+    case_meta: Any = None
+
     # ── factory ─────────────────────────────────────────────────────────────
     @classmethod
     def from_json(cls, path: str | Path) -> "ReportContext":
@@ -110,20 +114,26 @@ class ReportContext:
         vol_curve = np.stack([np.asarray(s["volatility"], dtype=float) for s in sigs])
         inter_curve = np.stack([np.asarray(s["interaction"], dtype=float) for s in sigs])
 
-        # trust score buckets
+        # trust score buckets. Match on the decision's leading prefix word(s)
+        # rather than the parenthetical suffix — the suffix varies by FFCA
+        # mode ("INVESTIGATE (unstable)" for trajectory mode, "INVESTIGATE
+        # (multi-modal seeds)" for ensemble mode), so substring-on-the-suffix
+        # would drop ensemble-mode features into the unbucketed void.
+        # CONFIDENTLY KEEP / CONFIDENTLY PRUNE must be tested before bare
+        # KEEP / PRUNE because Python dicts preserve insertion order.
         trust = raw.get("trust", {})
         feature_trust: dict[str, str] = {f: t.get("decision", "") for f, t in trust.items()}
-        bucket_keys = {
-            "CONFIDENTLY KEEP": "confident_keep",
-            "KEEP (stable)": "keep_stable",
-            "MONITOR (borderline)": "monitor",
-            "INVESTIGATE (unstable)": "investigate",
-            "CONFIDENTLY PRUNE": "confident_prune",
-        }
-        buckets: dict[str, TrustBucket] = {v: TrustBucket() for v in bucket_keys.values()}
+        bucket_prefixes = [
+            ("CONFIDENTLY KEEP",  "confident_keep"),
+            ("CONFIDENTLY PRUNE", "confident_prune"),
+            ("KEEP",              "keep_stable"),
+            ("MONITOR",           "monitor"),
+            ("INVESTIGATE",       "investigate"),
+        ]
+        buckets: dict[str, TrustBucket] = {snake: TrustBucket() for _, snake in bucket_prefixes}
         for fname, dec in feature_trust.items():
-            for paper_dec, snake in bucket_keys.items():
-                if dec.startswith(paper_dec.split(" ")[0]) and paper_dec in dec:
+            for prefix, snake in bucket_prefixes:
+                if dec.startswith(prefix):
                     buckets[snake].features.append(fname)
                     buckets[snake].count += 1
                     break
@@ -200,6 +210,17 @@ class ReportContext:
         raise MissingSignal(f"unknown signal root: {path}")
 
     def _feature_signal(self, rest: str, i: int) -> Any:
+        # Epoch-axis signals are only meaningful when CaseMeta declares
+        # checkpoint_kind = epoch. On a seed-axis ensemble, "checkpoint 0"
+        # is just the first seed file in load order — an arbitrary value
+        # that should not drive rule firing. Gate the signals here rather
+        # than relying on every rule remembering an applies_when clause.
+        _EPOCH_ONLY = {"impact_epoch0", "impact_ratio_epoch0", "impact_saturation"}
+        if rest in _EPOCH_ONLY and not self._is_epoch_axis():
+            raise MissingSignal(
+                f"feature.{rest} requires checkpoint_kind='epoch' "
+                f"(case_meta.checkpoint_kind={self._checkpoint_kind_str()!r})"
+            )
         match rest:
             case "name":          return self.feature_names[i]
             case "impact":        return float(self.impact[i])
@@ -233,12 +254,51 @@ class ReportContext:
             case "impact_saturation":
                 # impact_curve[0] / impact at the final checkpoint. Closer to 1 = the
                 # feature reached its final importance immediately (suggests no learning
-                # needed, characteristic of leakage).
+                # needed, characteristic of leakage). Epoch-axis only — see gate above.
                 final = float(self.impact_curve[-1, i]) or 1e-12
                 return float(self.impact_curve[0, i]) / final
         raise MissingSignal(f"feature.{rest}")
 
+    def _is_epoch_axis(self) -> bool:
+        """True iff CaseMeta declares the checkpoints as epoch-ordered.
+
+        Returns True when no case_meta is attached, preserving backward
+        compatibility for callers that pre-date the seed-vs-epoch fix.
+        Returns False explicitly when case_meta.checkpoint_kind is 'seed'
+        or 'mixed'.
+        """
+        cm = getattr(self, "case_meta", None)
+        if cm is None:
+            return True  # legacy default
+        ck = getattr(cm, "checkpoint_kind", None)
+        if ck is None:
+            return True
+        return str(getattr(ck, "value", ck)) == "epoch"
+
+    def _checkpoint_kind_str(self) -> str | None:
+        cm = getattr(self, "case_meta", None)
+        if cm is None:
+            return None
+        ck = getattr(cm, "checkpoint_kind", None)
+        if ck is None:
+            return None
+        return str(getattr(ck, "value", ck))
+
     def _model_signal(self, rest: str) -> Any:
+        # Epoch-axis-only model signals: same gating reason as
+        # _feature_signal's _EPOCH_ONLY set. checkpoint_drift_l2_pct compares
+        # the last two checkpoints, which is meaningless on seed-axis;
+        # interaction_to_impact_growth_ratio uses the first vs last
+        # checkpoint as "before training" vs "after training".
+        _EPOCH_ONLY = {
+            "checkpoint_drift_l2_pct",
+            "interaction_to_impact_growth_ratio",
+        }
+        if rest in _EPOCH_ONLY and not self._is_epoch_axis():
+            raise MissingSignal(
+                f"model.{rest} requires checkpoint_kind='epoch' "
+                f"(case_meta.checkpoint_kind={self._checkpoint_kind_str()!r})"
+            )
         match rest:
             case "n_features":      return self.n_features
             case "impact_mean":     return float(self.impact.mean())
@@ -308,14 +368,14 @@ class ReportContext:
         paper_name = next((p for p, s in PAPER_TO_SNAKE.items() if s == snake), None)
         if paper_name is None:
             raise MissingSignal(f"unknown archetype snake: {snake}")
+        # Build the name→index map once. The previous implementation called
+        # `self.feature_names.index(n)` inside the sort key — O(n²) on
+        # large feature spaces.
+        idx_by_name = {n: i for i, n in enumerate(self.feature_names)}
         names = [self.feature_names[i] for i, a in enumerate(self.archetypes) if a == paper_name]
         if not names:
             return "none"
-        # rank by impact descending so the most prominent appear first
-        names_sorted = sorted(
-            names,
-            key=lambda n: -float(self.impact[self.feature_names.index(n)]),
-        )
+        names_sorted = sorted(names, key=lambda n: -float(self.impact[idx_by_name[n]]))
         head = names_sorted[:10]
         tail = f" (+{len(names_sorted) - 10} more)" if len(names_sorted) > 10 else ""
         return ", ".join(head) + tail
@@ -408,6 +468,11 @@ class ReportContext:
     def attach_vision_metrics(self, metrics) -> None:
         """Merge a VisionMetrics object's non-None curves into the vision dict."""
         self.vision.update(metrics.as_signal_dict())
+
+    def attach_case_meta(self, case_meta) -> None:
+        """Attach a CaseMeta so the evaluator can honor `applies_when` clauses
+        (e.g. `case.checkpoint_kind == 'seed'`)."""
+        self.case_meta = case_meta
 
 
 def archetype_pct_signals(ctx: ReportContext) -> dict[str, float]:

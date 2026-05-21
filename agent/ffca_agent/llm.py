@@ -86,12 +86,31 @@ Features are clustered into 8 archetypes based on these four scalars:
                            to explain — non-linear, interactive, and context-
                            dependent at once. Need every tool in the box.
 
-A trust score is derived from cross-checkpoint stability: how often the
-feature stayed in the same useful archetype across training checkpoints.
-The buckets are CONFIDENTLY KEEP, KEEP (stable), MONITOR (borderline),
-INVESTIGATE (unstable), CONFIDENTLY PRUNE. High INVESTIGATE counts mean the
-model has not converged on stable feature roles — pruning decisions taken
-from a single checkpoint won't reproduce on the next one.
+A trust score is derived from how consistently a feature stays in the same
+useful archetype across the sequence of "checkpoints" passed to FFCA. The
+buckets are CONFIDENTLY KEEP, KEEP (stable), MONITOR (borderline),
+INVESTIGATE, CONFIDENTLY PRUNE.
+
+**Critical:** the interpretation of INVESTIGATE depends on what the
+"checkpoints" actually are. The user's case context will tell you which
+axis applies:
+
+  - **Epoch axis** (one training run, multiple snapshots over time):
+    INVESTIGATE means the model has not converged on stable feature roles.
+    "Train longer" or "use an LR schedule" is the right recommendation.
+    Drift between consecutive checkpoints is meaningful.
+
+  - **Seed axis** (multiple independently-trained models, e.g. a 30-member
+    deep ensemble): INVESTIGATE means *different seeds find different
+    feature-role assignments* of roughly equivalent accuracy — the FFCA
+    "ensemble in disguise" signature. More training will NOT reduce this.
+    Drift between consecutive members is meaningless (they have no time
+    ordering). Recommend: accept the ensemble if accuracy is satisfactory;
+    do NOT prune by INVESTIGATE alone (different seeds disagree on which
+    features matter).
+
+If the case-context block does NOT specify the checkpoint axis, ask for it
+in the caveats; do not silently assume epoch.
 
 A Co-Sensitivity step further clusters features into functional groups that
 move together under perturbation. When a cluster is mostly Noise Candidates
@@ -180,26 +199,62 @@ OUTPUT FORMAT. Emit your response between the markers below, with valid JSON:
 }
 """ + _RESPONSE_END + """
 
-Concrete example of good output style:
+## ALWAYS describe the model, not only diagnose it
 
-  executive_summary: "Model is information-rich but has not converged. 175
-  features split into a healthy archetype mix (32% Complex Drivers, 24%
-  Catalysts), and 30 load-bearing features form a stable backbone. However,
-  the signature drifts 41% between the last two checkpoints and 71% of
-  features change archetype across training. Do not act on pruning or
-  architectural conclusions yet — train longer and re-run FFCA before
-  making structural decisions."
+Even when no critical or warn-level finding fires, your executive_summary
+and actions MUST give the reader a useful picture of the model. That
+means surfacing, by name, concrete numeric values from the report:
 
-  action: priority=1, title="Train longer before acting on this report",
-  rationale="The signature is still moving 41% between the last checkpoints
-  and 71% of features land in INVESTIGATE because their archetype keeps
-  changing. Pruning or architecture decisions made now will not reproduce
-  next epoch.", rule_ids=["late_checkpoint_drift", "trust_instability_high"]
+  1. **The top features by Impact** (cite the actual names, with archetype
+     labels — "gwl_t-1 (Complex Driver, Impact=0.41)") — pull from the
+     signature_summary block in the user prompt.
+  2. **The archetype distribution** (which buckets dominate, by count and
+     percentage). Healthy models have a spread; a single-archetype-dominant
+     model is itself a finding.
+  3. **The load-bearing backbone** (CONFIDENTLY KEEP / KEEP-stable features
+     by count, from trust_keep_recommended if it fires, or from the trust
+     summary). These are the features whose removal would hurt accuracy.
+  4. **Any Co-Sensitivity clusters worth noting** — especially prune-safe
+     groups if cosens_prune_candidate_group fires, but also tight clusters
+     of high-Impact features (functional redundancy).
+  5. **Seed-axis cases specifically**: if any features are flagged as
+     multi-modal across seeds, name them and report their per-seed
+     archetype spread. "Different seeds put gwl_t-3 in Catalyst vs
+     Complex Driver" is a useful observation.
+
+A "no problems found" narration that doesn't tell the user what the model
+LOOKS LIKE is a bad narration. The reader should walk away knowing the
+model's structure, not just that it has no red flags.
+
+## Concrete example of good output style
+
+(Epoch-axis case, seed-ensemble cases will lead with cross-seed agreement
+instead of drift.)
+
+  executive_summary: "Model is structurally healthy. 175 features split
+  into a balanced archetype mix (32% Complex Drivers, 24% Interactive
+  Catalysts, 12% Noise Candidates) and a 30-feature CONFIDENTLY-KEEP
+  backbone dominated by the gwl lag series (gwl_t-1, gwl_t-2, gwl_t-3 all
+  Impact > 0.35). Volatility curve is flat across checkpoints, no overfit
+  spike, no drift > 10%. No critical findings; the headline is that the
+  load-bearing features are the recent gwl lags exactly as a hydrologist
+  would expect."
+
+  action: priority=1, title="Document the gwl-lag backbone for the model
+  card", rationale="30 features form a stable load-bearing group; the
+  top 5 by Impact are all recent gwl lags. Worth protecting in any
+  downstream pruning or feature-store change.", rule_ids=["trust_keep_recommended"]
+
+  action: priority=2, title="Investigate the 3 Volatile Specialist features",
+  rationale="rain_t-6, rain_t-12, wls_t-18 are high-Impact but
+  high-Volatility — their effect is context-dependent. Consider sliced
+  analysis to confirm they are not spurious.", rule_ids=["archetype_volatile_specialist"]
 
 Style notes: prefer specific feature names over abstract phrasing when the
 finding evidence names them; never claim the paper says something that
 isn't in the relevant rule's paper_ref; if no findings are critical or warn,
-your executive summary should explicitly say the model is healthy.
+your executive summary should explicitly say the model is healthy AND
+describe its structure (top features, archetype mix, load-bearing backbone).
 
 After the closing marker you may add a short prose note (1-3 sentences) if
 you want to highlight something the structured fields can't carry, but the

@@ -197,6 +197,8 @@ def test_overfitting_volatility_spike_fires_bike_sharing_style(rulebook, tmp_pat
     # v0.5: triggers are (volatility spike >= 1.4) AND (val_train_gap > 0.5).
     # Bike-style overfitting: train_loss keeps falling, val_loss falls slower,
     # gap widens — captured by val_train_gap rather than a strict plateau.
+    # v0.8: rule is now applies_when: case.checkpoint_kind=='epoch'.
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     raw = _build_report(
         feature_names=[f"f{i}" for i in range(10)],
         archetypes=[7] * 5 + [3] * 5,  # Complex + Catalyst — capacity is fine
@@ -215,6 +217,7 @@ def test_overfitting_volatility_spike_fires_bike_sharing_style(rulebook, tmp_pat
         metric_name="val_loss", lower_is_better=True,
     )
     ctx = _ctx_with_history(raw, h, tmp_path)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
     findings = evaluate_rulebook(rulebook, ctx)
     fired = {f.rule_id for f in findings}
     assert "overfitting_volatility_spike" in fired
@@ -223,7 +226,10 @@ def test_overfitting_volatility_spike_fires_bike_sharing_style(rulebook, tmp_pat
 def test_data_leakage_immediate_dominance_fires_on_dominant_saturated_feature(rulebook, tmp_path):
     """v0.3: leakage rule now works for regression AND classification.
     Trigger: feature dominates (>5× mean Impact) + saturated at first ckpt + val/train gap < 0.10.
+    v0.8: rule is now applies_when: case.checkpoint_kind=='epoch' because
+    impact_saturation is meaningless on a seed-axis ensemble.
     """
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     n_ckpts = 10
     n_feat = 8  # dominance can only exceed n=5 with at least 6 features (mean lower bound)
     # f0 already at near-final impact from epoch 1; others much smaller.
@@ -244,6 +250,7 @@ def test_data_leakage_immediate_dominance_fires_on_dominant_saturated_feature(ru
         metric_name="val_loss", lower_is_better=True,
     )
     ctx = _ctx_with_history(raw, h, tmp_path)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
     findings = evaluate_rulebook(rulebook, ctx)
     leakage = [f for f in findings if f.rule_id == "data_leakage_immediate_dominance"]
     assert leakage, "expected leakage rule to fire on the dominant saturated feature"
@@ -275,7 +282,10 @@ def test_spurious_correlation_train_val_gap_fires(rulebook, tmp_path):
 
 def test_hierarchical_learning_confirmed_fires(rulebook, tmp_path):
     """v0.3: rule now checks relative growth rates, not spike patterns.
-    Interaction should grow >2× as fast as Impact across checkpoints."""
+    Interaction should grow >2× as fast as Impact across checkpoints.
+    v0.8: rule is now applies_when: case.checkpoint_kind=='epoch' because
+    'growth across checkpoints' is meaningless on a seed-axis ensemble."""
+    from ffca_agent.case_meta import CaseMeta, CheckpointKind
     # Build curves where Interaction grows 10x but Impact only grows 2x (ratio = 5.0).
     n_ckpts = 8
     n_feat = 5
@@ -303,6 +313,7 @@ def test_hierarchical_learning_confirmed_fires(rulebook, tmp_path):
     raw["signatures"] = sigs
     p.write_text(_json.dumps(raw))
     ctx = ReportContext.from_json(p)
+    ctx.attach_case_meta(CaseMeta(checkpoint_kind=CheckpointKind.EPOCH))
     findings = evaluate_rulebook(rulebook, ctx)
     fired = {f.rule_id for f in findings}
     assert "hierarchical_learning_confirmed" in fired, (

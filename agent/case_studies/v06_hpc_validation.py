@@ -44,29 +44,16 @@ D. Determinism check
 Usage
 =====
 
-Setup first (only needed once):
-    cd <FFCA repo root>
-    pip install -e .
-    pip install -e ./agent
-    pip install shap captum     # for section B baselines
-
-Then run:
-    python agent/case_studies/v06_hpc_validation.py \\
-        --key-file /real/path/to/key.txt \\
+    python case_studies/v06_hpc_validation.py \\
+        --key-file /path/to/api_key.txt \\
         --out-dir results/v06_validation/
 
 Each section is gated by a CLI flag (default: all on):
 
     --skip-zoo --skip-baselines --skip-intent --skip-determinism
 
-Sections C and D need ANTHROPIC_API_KEY. If you don't have one, run:
-    python agent/case_studies/v06_hpc_validation.py \\
-        --out-dir results/v06_validation/ \\
-        --skip-intent --skip-determinism
-
-Sections B, C, and D operate on 4 engineered cases that the script trains
-on first launch (~5 minutes on GPU). Re-launches reuse the cached
-artifacts.
+Sections that need ANTHROPIC_API_KEY (C, D, optionally B for compared
+narration) silently skip if no key is provided. Section A is API-free.
 
 Cost estimate (with API key)
 ============================

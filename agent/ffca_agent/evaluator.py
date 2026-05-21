@@ -202,7 +202,80 @@ def _format_with_resolver(template: str, ctx: ReportContext, feature_idx: int | 
     return pattern.sub(replace, template)
 
 
+_APPLIES_WHEN_GRAMMAR = (
+    "Supported forms:\n"
+    "  case.<attr> == '<value>'\n"
+    "  case.<attr> != '<value>'\n"
+    "  case.<attr> in ('a', 'b', ...)\n"
+    "  case.<attr> not_in ('a', 'b', ...)\n"
+    "Use single quotes around literal values."
+)
+
+
+def _check_applies_when(applies_when: str, ctx: ReportContext) -> bool:
+    """Expression check used to gate rules on CaseMeta attributes.
+
+    Returning False causes the evaluator to skip the rule entirely. If
+    case_meta is None but an applies_when clause is present, returns False
+    — the rule was explicitly gated on case context that wasn't provided.
+
+    Raises ValueError on un-parseable expressions. Previously these
+    silently returned True (rule fired unconditionally), which let YAML
+    typos like `case.X = 'epoch'` (single equals) sneak through and
+    mis-gate the seed-vs-epoch rules.
+    """
+    import re
+
+    cm = getattr(ctx, "case_meta", None)
+    expr = applies_when.strip()
+
+    # case.X == 'v' / case.X != 'v'
+    m = re.match(
+        r"^case\.(\w+)\s*(==|!=)\s*['\"]([^'\"]+)['\"]$", expr
+    )
+    if m:
+        attr, op, value = m.group(1), m.group(2), m.group(3)
+        if cm is None:
+            return False
+        cm_val = _case_attr_string(cm, attr)
+        return (cm_val == value) if op == "==" else (cm_val != value)
+
+    # case.X in ('a', 'b') / case.X not_in ('a', 'b')
+    m = re.match(
+        r"^case\.(\w+)\s+(in|not_in)\s*\(\s*(.+?)\s*\)$", expr
+    )
+    if m:
+        attr, op, list_body = m.group(1), m.group(2), m.group(3)
+        items = [
+            s.strip().strip("'\"")
+            for s in list_body.split(",")
+            if s.strip()
+        ]
+        if cm is None:
+            return False
+        cm_val = _case_attr_string(cm, attr)
+        in_set = cm_val in items
+        return in_set if op == "in" else not in_set
+
+    raise ValueError(
+        f"applies_when expression {applies_when!r} is not parseable.\n"
+        f"{_APPLIES_WHEN_GRAMMAR}"
+    )
+
+
+def _case_attr_string(cm, attr: str) -> str | None:
+    val = getattr(cm, attr, None)
+    if val is None:
+        return None
+    return str(getattr(val, "value", val))
+
+
 def _eval_rule_at(rule: dict, ctx: ReportContext, feature_idx: int | None) -> Finding | None:
+    # v0.7: respect applies_when gating on case context (e.g. checkpoint_kind)
+    aw = rule.get("applies_when")
+    if aw and not _check_applies_when(aw, ctx):
+        return None
+
     triggers = rule["triggers"]
     logic = rule.get("trigger_logic", "all")
 

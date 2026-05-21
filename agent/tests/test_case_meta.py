@@ -20,7 +20,11 @@ def test_case_meta_default_values_are_sane():
     assert m.model_architecture == ModelArchitecture.MLP
     assert m.task_type == TaskType.REGRESSION
     assert m.n_seeds == 1
-    assert m.schema_version == "0.6.0"
+    # schema_version bumped to 0.7.0 when CheckpointKind was added.
+    assert m.schema_version == "0.7.0"
+    # v0.7+: checkpoint_kind is optional but should default to None so
+    # the questionnaire can require an explicit choice.
+    assert m.checkpoint_kind is None
 
 
 def test_round_trip_json(tmp_path):
@@ -62,7 +66,10 @@ def test_questionnaire_uses_defaults_when_user_hits_enter():
 
 
 def test_questionnaire_accepts_numbered_choice_for_enum():
-    """Selecting '2' on the model-arch question picks the 2nd option."""
+    """Selecting '2' on the model-arch question picks the 2nd option.
+    v0.7+: a new checkpoint_kind question precedes the model-architecture
+    question; the answer order must match the new questionnaire flow.
+    """
     arch_options = [a.value for a in ModelArchitecture]
     task_options = [t.value for t in TaskType]
     expected_arch = ModelArchitecture(arch_options[1])  # cnn
@@ -70,6 +77,7 @@ def test_questionnaire_accepts_numbered_choice_for_enum():
 
     answers = iter([
         "MyProject",   # project_name
+        "1",           # checkpoint_kind → epoch (added in v0.7)
         "2",           # model_architecture → cnn
         "3",           # task_type → multiclass_classification
         "label",       # target_name

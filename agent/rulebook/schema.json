@@ -111,6 +111,10 @@
         "paper_ref": {
           "type": "string",
           "description": "Where in the FFCA paper this rule is justified (e.g., 'Table 5 row 6', 'App C.6 Fig 18')."
+        },
+        "applies_when": {
+          "type": "string",
+          "description": "Optional gate. The rule fires only when the expression holds against the attached CaseMeta. Supported grammar: case.<attr> == '<value>', case.<attr> != '<value>', case.<attr> in ('a', 'b'), case.<attr> not_in ('a', 'b'). Example: applies_when: \"case.checkpoint_kind == 'epoch'\". Un-parseable expressions raise at evaluation time."
         }
       },
       "allOf": [

@@ -378,6 +378,7 @@ rules:
     kind: descriptor
     category: training_dynamics
     scope: model_wide
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: model.n_checkpoints
         op: ">="
@@ -398,6 +399,7 @@ rules:
     category: training_dynamics
     scope: dynamic
     severity: warn
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: training.volatility_curve
         op: "spike_detected"
@@ -414,11 +416,18 @@ rules:
       - "Cross-check with spurious_correlation_train_val_gap — both look similar in the aggregate volatility plot but spurious correlation is per-feature dominance, this rule is model-wide overfitting."
     paper_ref: "Table 6 row 4, App C.3 Fig 9 (Bike Sharing, epoch ~120). v0.5: plateau trigger replaced with val_train_gap to also catch gap-style overfitting where val_loss keeps improving but lags train_loss."
 
+  # NOTE (v0.7): The two checkpoint-drift rules below are valid ONLY when the
+  # FFCA checkpoint axis is TIME (epochs of one training run). On a seed-axis
+  # ensemble there is no meaningful ordering between checkpoints, so "drift
+  # between the last two" is a meaningless number. These rules should be
+  # gated by case.checkpoint_kind == 'epoch'. The narrator MUST suppress
+  # them on seed-axis cases.
   - id: convergence_achieved
-    name: "Signature has converged across checkpoints"
+    name: "Signature has converged across training-time checkpoints (epoch axis only)"
     kind: descriptor
     category: training_dynamics
     scope: model_wide
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: model.n_checkpoints
         op: ">="
@@ -426,17 +435,18 @@ rules:
       - signal: model.checkpoint_drift_l2_pct
         op: "<"
         value: 5
-    diagnosis: "Signature L2 drift between the last two checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has converged into stable feature roles."
+    diagnosis: "Signature L2 drift between the last two epoch-checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has converged into stable feature roles."
     recommendation: "Trust the per-feature findings in this report. Further training is unlikely to change feature interpretations meaningfully."
-    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% across {model.n_checkpoints} checkpoints."
+    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% across {model.n_checkpoints} epoch-checkpoints."
     paper_ref: "heuristic: signature stability check"
 
   - id: late_checkpoint_drift
-    name: "Signature still drifting in late training"
+    name: "Signature still drifting in late training (epoch axis only)"
     kind: diagnostic
     category: training_dynamics
     scope: model_wide
     severity: warn
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: model.n_checkpoints
         op: ">="
@@ -444,10 +454,12 @@ rules:
       - signal: model.checkpoint_drift_l2_pct
         op: ">"
         value: 20
-    diagnosis: "Signature L2 drift between the last two checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has not converged. Per-feature interpretations in this report may not reproduce on the next checkpoint."
+    diagnosis: "Signature L2 drift between the last two epoch-checkpoints is {model.checkpoint_drift_l2_pct:.1f}% of the signature scale — the model has not converged. Per-feature interpretations may not reproduce on the next checkpoint."
     recommendation: "Train more epochs before drawing pruning or architectural conclusions. Pruning decisions made now will not be stable."
-    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% (>20% threshold) across {model.n_checkpoints} checkpoints."
+    evidence_template: "Checkpoint drift = {model.checkpoint_drift_l2_pct:.1f}% (>20% threshold) across {model.n_checkpoints} epoch-checkpoints."
     paper_ref: "heuristic"
+    confidence_factors:
+      - "On a SEED-axis ensemble (independent runs, no time ordering), 'drift between consecutive checkpoints' is meaningless. This rule must not fire there."
 
   # ═══ E. Data-pathology rules (App C.6) ════════════════════════════════════
 
@@ -457,6 +469,7 @@ rules:
     category: data_pathology
     scope: per_feature
     severity: critical
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: feature.impact_dominance
         op: ">"
@@ -497,22 +510,46 @@ rules:
 
   # ═══ F. Stability / Trust-Score rules ═════════════════════════════════════
 
-  - id: trust_instability_high
-    name: "High trust-instability across checkpoints"
+  # Two axis-aware variants of the old trust_instability_high rule.
+  # v0.7 split: pre-v0.7 had ONE rule whose diagnosis was hard-coded for
+  # epoch-axis ("different epochs use features differently — train longer").
+  # On compound-flooding (a 30-seed ensemble) this misdiagnosed multi-modal
+  # seed disagreement as training incompleteness. See
+  # project_rulebook_bug_seed_vs_epoch.md.
+  - id: trust_instability_high_epoch_axis
+    name: "High trust-instability across training-time checkpoints"
     kind: diagnostic
     category: stability
     scope: dynamic
     severity: warn
+    applies_when: "case.checkpoint_kind == 'epoch'"
     triggers:
       - signal: trust.investigate.fraction
         op: ">"
         value: 0.5
-    diagnosis: "{trust.investigate.fraction_pct:.0f}% of features changed archetype between checkpoints. The model has not settled into stable feature roles — either still training, or the data is noisy enough that different epochs use the features differently."
-    recommendation: "Train more epochs, or use a learning-rate schedule that converges sooner. If accuracy is good but features are unstable, the model is an ensemble in disguise."
+    diagnosis: "{trust.investigate.fraction_pct:.0f}% of features changed archetype between consecutive training-time checkpoints. The model has not settled into stable feature roles — either still training, or the data is noisy enough that different epochs use the features differently."
+    recommendation: "Train more epochs, or use a learning-rate schedule that converges sooner. Pruning or architecture decisions taken now will not reproduce on the next checkpoint."
     evidence_template: "{trust.investigate.count}/{model.n_features} features have INVESTIGATE decision ({trust.investigate.fraction_pct:.0f}%)."
-    confidence_factors:
-      - "If pruning INVESTIGATE features improves stability AND preserves skill (as in the compound-flooding case), the original instability was caused by over-parameterization rather than meaningful checkpoint flips."
     paper_ref: "Implicit in §6 future work (production drift); operationalized in compound-flooding case study"
+
+  - id: trust_multi_modal_seeds
+    name: "High cross-seed disagreement on feature roles"
+    kind: diagnostic
+    category: stability
+    scope: dynamic
+    severity: warn
+    applies_when: "case.checkpoint_kind == 'seed'"
+    triggers:
+      - signal: trust.investigate.fraction
+        op: ">"
+        value: 0.5
+    diagnosis: "{trust.investigate.fraction_pct:.0f}% of features had a different archetype on a minority of the seeds (cross-seed archetype agreement < 0.4). This is the FFCA 'ensemble in disguise' signature: the loss landscape is multi-modal and different seeds find different feature-role assignments that happen to be roughly equivalent in accuracy."
+    recommendation: "Do NOT interpret as 'training incomplete' — more epochs will not resolve cross-seed multi-modality. Do NOT prune by INVESTIGATE alone; some seeds rely heavily on these features. If model RMSE is satisfactory, accept the ensemble. If RMSE is unsatisfactory, the right lever is architecture / feature engineering, not more training."
+    evidence_template: "{trust.investigate.count}/{model.n_features} features show cross-seed multi-modal disagreement ({trust.investigate.fraction_pct:.0f}%)."
+    confidence_factors:
+      - "If multi-modal-seed features are also high-Impact in the aggregated signature, that strengthens the 'ensemble in disguise' reading — the model uses them, the seeds just disagree on HOW."
+      - "If pruning INVESTIGATE features in one seed preserves skill, that is evidence the multi-modal features were redundant for that seed but not for others (a sliced/per-seed prune may work better than a global one)."
+    paper_ref: "v0.7 split of trust_instability_high after seed-vs-epoch reset"
 
   - id: monitor_bucket_dominant
     name: "Most features are borderline (MONITOR)"
@@ -525,7 +562,7 @@ rules:
         op: ">"
         value: 0.4
     diagnosis: "{trust.monitor.fraction_pct:.0f}% of features fall in the MONITOR bucket — between clearly-keep and clearly-prune. The model has not committed to feature roles strongly."
-    recommendation: "Train more epochs before making pruning decisions. Decisions made on a model dominated by borderline features will not be reproducible."
+    recommendation: "On an EPOCH-axis case: train more epochs before pruning. On a SEED-axis case: many borderline features means the ensemble has not converged on consistent roles — accept the ensemble or run more seeds, NOT more epochs per seed. Pruning decisions on this report won't be reproducible across either axis."
     evidence_template: "MONITOR features = {trust.monitor.count} ({trust.monitor.fraction_pct:.0f}%)."
     paper_ref: "heuristic"
 
@@ -538,8 +575,8 @@ rules:
       - signal: trust.confident_keep.fraction
         op: ">"
         value: 0.05
-    diagnosis: "{trust.confident_keep.count} features ({trust.confident_keep.fraction_pct:.0f}% of model) are stably important across all checkpoints — they kept a useful archetype (Workhorse / Catalyst / Stable Contributor) at every checkpoint."
-    recommendation: "Treat these as the backbone of the model. Do not prune. Add extra logging in production. Removing or changing them will be felt in accuracy."
+    diagnosis: "{trust.confident_keep.count} features ({trust.confident_keep.fraction_pct:.0f}% of model) are stably important across the entire checkpoint set — high Impact, confident archetype assignment, and consistent role. On an epoch-axis case: these are stable across training time. On a seed-axis case: these are the features every seed agrees are important."
+    recommendation: "Treat these as the load-bearing backbone of the model. Do not prune. Add extra logging in production. Removing or changing them will be felt in accuracy."
     evidence_template: "Confidently keep: {trust.confident_keep.feature_list}."
     paper_ref: "Implicit in §6; operationalized in compound-flooding case study"
 
@@ -552,8 +589,8 @@ rules:
       - signal: trust.confident_prune.fraction
         op: ">"
         value: 0.05
-    diagnosis: "{trust.confident_prune.count} features ({trust.confident_prune.fraction_pct:.0f}% of model) are confidently Noise across all checkpoints — they were Noise at every checkpoint with high stability."
-    recommendation: "Prune these; expect no accuracy loss. They are the safest pruning targets — never important, not just unimportant at the end."
+    diagnosis: "{trust.confident_prune.count} features ({trust.confident_prune.fraction_pct:.0f}% of model) are confidently Noise — near-zero Impact and consistent Noise-Candidate archetype across the entire checkpoint set."
+    recommendation: "Prune these; expect no accuracy loss. They are the safest pruning targets — never important, regardless of which axis (epoch or seed) we look across."
     evidence_template: "Confidently prune: {trust.confident_prune.feature_list}."
     paper_ref: "Implicit in §6; operationalized in compound-flooding case study"
 
