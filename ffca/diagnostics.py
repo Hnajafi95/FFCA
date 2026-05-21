@@ -291,8 +291,16 @@ def detect_saturation(
 
 def detect_capacity(
     signature: FFCASignature,
+    *,
+    mode: str = "trajectory",
 ) -> list[Finding]:
-    """Archetype distribution as a model-health summary."""
+    """Archetype distribution as a model-health summary.
+
+    The `mode` parameter mirrors FFCAReport.mode: in 'ensemble' mode
+    'train longer' is removed from the recommendation because the
+    checkpoints are independent seeds, not a single training run that
+    can be extended.
+    """
     if signature.archetypes is None or signature.n_features < 8:
         return []
     counts = np.bincount(signature.archetypes, minlength=8)
@@ -302,6 +310,16 @@ def detect_capacity(
     catalyst_frac = counts[3] / n
 
     if noise_frac > 0.50:
+        if mode == "ensemble":
+            recommendation = (
+                "These features are noise across every seed — safe to prune. "
+                "Do not interpret as 'training incomplete'; the checkpoints "
+                "are independent seeds, not a single training run."
+            )
+        else:
+            recommendation = (
+                "Train longer, or prune the noise features to lighten inference."
+            )
         return [Finding(
             name="capacity",
             severity="warn",
@@ -312,8 +330,7 @@ def detect_capacity(
             why_it_matters="More than half of features contribute nothing — "
                             "either they are genuinely irrelevant, or the model "
                             "has not learned to use them yet.",
-            recommendation="Train longer, or prune the noise features to lighten "
-                            "inference.",
+            recommendation=recommendation,
             evidence={"archetype_counts": counts.tolist()},
         )]
     if complex_frac > 0.50:
@@ -402,8 +419,15 @@ def detect_co_sensitivity_verdict(cosens) -> list[Finding]:
     )]
 
 
-def detect_trust_verdict(trust) -> list[Finding]:
-    """Plain-English summary of the Trust Score decisions."""
+def detect_trust_verdict(trust, mode: str = "trajectory") -> list[Finding]:
+    """Plain-English summary of the Trust Score decisions.
+
+    In trajectory mode the high-INVESTIGATE finding's diagnosis is framed
+    around training time ("model has not settled"). In ensemble mode the
+    "INVESTIGATE (multi-modal seeds)" bucket has a different meaning and the
+    finding text is reworded accordingly — see project_rulebook_bug_seed_vs_epoch
+    in /Users/hnaja002/.claude/.../memory/ for context.
+    """
     if trust is None or not trust.results:
         return []
     summary = trust.summary()
@@ -411,26 +435,59 @@ def detect_trust_verdict(trust) -> list[Finding]:
     findings = []
     p_count = summary.get("CONFIDENTLY PRUNE", 0)
     k_count = summary.get("CONFIDENTLY KEEP", 0) + summary.get("KEEP (stable)", 0)
-    i_count = summary.get("INVESTIGATE (unstable)", 0)
+    if mode == "ensemble":
+        i_count = summary.get("INVESTIGATE (multi-modal seeds)", 0)
+    else:
+        i_count = summary.get("INVESTIGATE (unstable)", 0)
     if i_count / max(n, 1) > 0.5:
-        findings.append(Finding(
-            name="trust_instability",
-            severity="warn",
-            headline=f"{i_count}/{n} features are unstable across checkpoints",
-            observation=f"More than half ({i_count/n:.0%}) of features changed "
-                        f"archetype between checkpoints (similarity-weighted "
-                        f"stability < 0.5).",
-            why_it_matters="High INVESTIGATE rate suggests the model has not "
-                            "settled into stable feature roles — either it is "
-                            "still training, or the data is noisy enough that "
-                            "different epochs use the features differently.",
-            recommendation="Train for more epochs, or use a learning-rate "
-                            "schedule that converges sooner. If accuracy is "
-                            "good but features are unstable, the model is "
-                            "an ensemble in disguise.",
-            evidence={"investigate_count": i_count, "total": n,
-                       "summary": summary},
-        ))
+        if mode == "ensemble":
+            findings.append(Finding(
+                name="trust_multi_modal_seeds",
+                severity="warn",
+                headline=f"{i_count}/{n} features behave differently across random seeds",
+                observation=f"{i_count/n:.0%} of features had a different "
+                            f"archetype on a minority of the seeds (modal-"
+                            f"archetype agreement < 0.4) while still carrying "
+                            f"non-trivial mean importance.",
+                why_it_matters="High cross-seed disagreement is the FFCA "
+                                "'ensemble in disguise' signature: the loss "
+                                "landscape is multi-modal and different seeds "
+                                "find different feature-role assignments that "
+                                "happen to be roughly equivalent in accuracy. "
+                                "This is NOT the same as 'model still training' — "
+                                "more epochs will not resolve it.",
+                recommendation="Treat the ensemble as load-bearing — do not "
+                                "prune by INVESTIGATE-rate alone, and do not "
+                                "interpret high INVESTIGATE as evidence of "
+                                "incomplete training. If model RMSE is "
+                                "satisfactory, accept the ensemble. If RMSE is "
+                                "not satisfactory, the right lever is "
+                                "architecture / feature engineering, not more "
+                                "training epochs.",
+                evidence={"investigate_count": i_count, "total": n,
+                           "summary": summary,
+                           "axis": "seed"},
+            ))
+        else:
+            findings.append(Finding(
+                name="trust_instability",
+                severity="warn",
+                headline=f"{i_count}/{n} features are unstable across checkpoints",
+                observation=f"More than half ({i_count/n:.0%}) of features changed "
+                            f"archetype between checkpoints (similarity-weighted "
+                            f"stability < 0.5).",
+                why_it_matters="High INVESTIGATE rate suggests the model has not "
+                                "settled into stable feature roles — either it is "
+                                "still training, or the data is noisy enough that "
+                                "different epochs use the features differently.",
+                recommendation="Train for more epochs, or use a learning-rate "
+                                "schedule that converges sooner. If accuracy is "
+                                "good but features are unstable, the model is "
+                                "an ensemble in disguise.",
+                evidence={"investigate_count": i_count, "total": n,
+                           "summary": summary,
+                           "axis": "epoch"},
+            ))
     if p_count > 0:
         findings.append(Finding(
             name="trust_prune_recommended",
@@ -468,19 +525,27 @@ def run_all(
     checkpoint_labels: Sequence[str],
     trust=None,
     cosens=None,
+    mode: str = "trajectory",
 ) -> list[Finding]:
     """Run every detector and return a flat list of findings, sorted by
-    severity (critical → warn → info)."""
+    severity (critical → warn → info).
+
+    `mode='ensemble'` skips epoch-axis detectors (drift, overfitting curve)
+    that are meaningless on aggregated seed-ensemble signatures, and routes
+    trust diagnostics through the seed-axis interpretation.
+    """
     findings: list[Finding] = []
     last = signatures[-1]
-    findings += detect_capacity(last)
+    findings += detect_capacity(last, mode=mode)
     findings += detect_data_leakage(last)
     findings += detect_tabular_shortcut(last)
     findings += detect_shortcut_learning(last)
     findings += detect_saturation(last)
-    if len(signatures) >= 3:
+    if mode == "trajectory" and len(signatures) >= 3:
+        # Overfitting detection reads volatility-curve over time; meaningless
+        # for aggregated seed signatures.
         findings += detect_overfitting(signatures, checkpoint_labels)
-    findings += detect_trust_verdict(trust)
+    findings += detect_trust_verdict(trust, mode=mode)
     findings += detect_co_sensitivity_verdict(cosens)
     rank = {"critical": 0, "warn": 1, "info": 2}
     findings.sort(key=lambda f: (rank.get(f.severity, 9), f.name))
