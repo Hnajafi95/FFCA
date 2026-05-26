@@ -526,10 +526,14 @@ def test_real_flooding_report_processes_without_error(rulebook):
     """End-to-end smoke: the compound-flooding 12hr_measured report must process.
 
     Since v0.2 aggregates archetype descriptors, we expect on the order of
-    a dozen model-wide findings, not one per feature."""
+    a dozen model-wide findings, not one per feature. Post-Phase E this
+    report is in seed-axis ensemble mode, so the seed-axis trust rule is
+    the one that should fire (the original `trust_instability_high` rule
+    was split during Phase E)."""
     real_report = Path(
         "/Users/hnaja002/Documents/projects/compound_flooding"
-        "/FFCA_resutls_before_prunning/Measurements Only/12hr_measured_sigmoid/report.json"
+        "/FFCA_resutls_before_prunning_ensemble/Measurements Only"
+        "/12hr_measured_sigmoid/report.json"
     )
     if not real_report.exists():
         pytest.skip(f"real report not available at {real_report}")
@@ -540,7 +544,9 @@ def test_real_flooding_report_processes_without_error(rulebook):
     # than n_features.
     assert s["n_findings"] >= 5
     fired = set(s["rules_fired"])
-    assert "trust_instability_high" in fired
+    # Seed-axis ensemble report → seed-axis trust rule fires, not the
+    # epoch-axis variant.
+    assert "trust_multi_modal_seeds" in fired or "monitor_bucket_dominant" in fired
     assert "cosens_abort_no_prune_safe" in fired
     # No template variable should leak through as literal text
     for f in findings:
