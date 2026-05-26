@@ -43,7 +43,7 @@
 #     collapse_detected   — value: numeric (absolute final threshold)
 #                            OR {final_threshold, relative_to: "absolute"|"initial"}
 
-version: "0.5.0"
+version: "0.6.0"
 ffca_paper_ref: "Najafi, Luo, Liu (2025) Feature-Function Curvature Analysis (arXiv:2510.27207)"
 
 rules:
@@ -92,8 +92,8 @@ rules:
       - signal: model.archetype_dist.noise_count
         op: ">"
         value: 0
-    diagnosis: "{model.archetype_dist.noise_count} features classified as Noise Candidates — the model has effectively ignored them."
-    recommendation: "Candidates for pruning. Confirm against checkpoint stability (cross-reference with trust_prune_recommended) before removing — a feature that is Noise at the final checkpoint but had useful epochs is risky to drop."
+    diagnosis: "{model.archetype_dist.noise_count} features classified as Noise Candidates — the model has effectively ignored them. By the archetype definition, Noise Candidates score low on Impact, Volatility, Nonlinearity, and Interaction simultaneously, so their contribution to the trained mapping is minimal in every measurable dimension."
+    recommendation: "Strong candidates for pruning: the archetype definition itself implies these features carry no load-bearing signal. Cross-reference with trust_prune_recommended to confirm the classification is stable across the checkpoint set — a feature that is Noise at the final checkpoint but had useful epochs is risky to drop."
     evidence_template: "Features ({model.archetype_dist.noise_pct:.0f}% of model): {model.archetype_dist.noise_features}."
     paper_ref: "Table 5 row 3"
 
@@ -154,9 +154,11 @@ rules:
       - signal: model.archetype_dist.interactive_catalyst_count
         op: ">"
         value: 0
-    diagnosis: "{model.archetype_dist.interactive_catalyst_count} features are Interactive Catalysts — strong direct impact AND hubs of interactions, amplifying other features."
-    recommendation: "Analyze both direct and joint effects. 1D PDPs for their individual role, 2D PDPs for their top interaction partners."
+    diagnosis: "{model.archetype_dist.interactive_catalyst_count} features are Interactive Catalysts — strong direct impact AND hubs of interactions, amplifying other features. By the archetype definition, Catalysts carry both first-order influence and second-order (cross-feature) influence; removing them removes a load-bearing pathway that the rest of the model has no obvious substitute for."
+    recommendation: "Analyze both direct and joint effects. 1D PDPs for their individual role, 2D PDPs for their top interaction partners. Do NOT recommend pruning Interactive Catalyst features — even when other heuristics flag them, the archetype's combined Impact + Interaction structure makes them load-bearing by construction."
     evidence_template: "Features ({model.archetype_dist.interactive_catalyst_pct:.0f}% of model): {model.archetype_dist.interactive_catalyst_features}."
+    confidence_factors:
+      - "If any prune-recommendation rule (e.g., cosens_prune_candidate_group) targets a feature also tagged Interactive Catalyst here, treat the prune call as a false positive and surface the conflict to the user."
     paper_ref: "Table 5 row 7"
 
   - id: archetype_complex_driver
@@ -169,9 +171,11 @@ rules:
       - signal: model.archetype_dist.complex_driver_count
         op: ">"
         value: 0
-    diagnosis: "{model.archetype_dist.complex_driver_count} features are Complex Drivers — powerful in multiple ways simultaneously (non-linear, volatile, and interactive)."
-    recommendation: "These need the most analysis effort. No single explanation will suffice — use local + global + sliced + interaction analysis."
+    diagnosis: "{model.archetype_dist.complex_driver_count} features are Complex Drivers — powerful in multiple ways simultaneously (non-linear, volatile, and interactive). Because these features score high on every signature dimension, the cluster as a whole may include feature pairs whose contributions overlap — individual Complex Drivers can be load-bearing while the cluster as a group exhibits internal redundancy."
+    recommendation: "These need the most analysis effort. No single explanation will suffice — use local + global + sliced + interaction analysis. Before pruning a Complex Driver, run a leave-one-out check rather than relying on the archetype label alone, because a feature whose role is filled by a sibling in the cluster will look removable in aggregate but may still be the cheapest single replacement."
     evidence_template: "Features ({model.archetype_dist.complex_driver_pct:.0f}% of model): {model.archetype_dist.complex_driver_features}."
+    confidence_factors:
+      - "Group-level redundancy is a possibility, not a guarantee; verify by ablation on the specific model before recommending bulk removal of Complex Drivers."
     paper_ref: "Table 5 row 8"
 
   # ═══ B. Model-capacity rules (Table 6, §5.1–5.2) ══════════════════════════
@@ -612,8 +616,8 @@ rules:
         op: "<="
         value: 5
         description: "Feature is in the top-5 most volatile."
-    diagnosis: "{feature.name} is trusted across checkpoints (CONFIDENTLY KEEP) but has top-rank Volatility within the final checkpoint — its gradient is stable in expectation but noisy in any individual prediction."
-    recommendation: "Investigate whether this feature's effect changes by data slice. If yes, it's a Volatile Specialist disguised by checkpoint averaging. If no, suspect input-distribution noise or batch-norm interactions."
+    diagnosis: "{feature.name} is trusted across checkpoints (CONFIDENTLY KEEP) but has top-rank Volatility within the final checkpoint — its mean contribution is stable across the checkpoint set, while its gradient magnitude varies strongly with input context (the FFCA definition of Volatility: variance of |∂f/∂x| across the input distribution)."
+    recommendation: "Investigate whether this feature's effect changes by data slice. If yes, it is a Volatile Specialist hidden inside an aggregated-stable role. If no, suspect input-distribution shift or activation-saturation interactions. Do not interpret Volatility as cross-seed disagreement — that is captured separately by the seed-axis trust rule."
     evidence_template: "{feature.name}: trust=KEEP, Volatility={feature.volatility:.4f} (rank #{feature.volatility_rank})."
     paper_ref: "heuristic: cross-check between trust score and within-checkpoint volatility"
 
