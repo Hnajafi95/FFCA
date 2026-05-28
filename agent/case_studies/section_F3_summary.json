@@ -1,0 +1,14 @@
+{
+  "experiment": "24hr_perfect_prog_gate_sigmoid",
+  "n_features": 30,
+  "n_pdp_samples": 40,
+  "n_test_rows": 500,
+  "spearman_rho": -0.8611790878754171,
+  "spearman_p": 1.0136297147319887e-09,
+  "pearson_r": -0.38716476772888003,
+  "pearson_p": 0.03454025883616216,
+  "median_resid_norm": 0.04729769665840172,
+  "resid_norm_min": 0.00152581893389224,
+  "resid_norm_max": 1.6380426914012203,
+  "wall_time_sec": 604.8
+}
