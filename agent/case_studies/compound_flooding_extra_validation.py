@@ -1264,7 +1264,7 @@ ARCHETYPES_TO_TEST = (
     'Noise Candidate',
     'Volatile Specialist',
     'Hidden Interactor',
-    'Nonlinear Driver',
+    'Non-linear Driver',   # matches PACKAGE_INDEX_TO_PAPER (hyphenated)
     'Simple Workhorse',
 )
 
