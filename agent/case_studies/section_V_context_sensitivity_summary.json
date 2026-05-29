@@ -1,0 +1,8 @@
+{
+  "n_features": 30,
+  "n_test_rows": 2000,
+  "n_subgroups": 4,
+  "spearman_rho_V_cv": -0.004226918798665183,
+  "spearman_p_V_cv": 0.9823138806139919,
+  "pearson_r_V_cv": -0.005830698784617686
+}
